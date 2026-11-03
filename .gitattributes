@@ -1,0 +1,23 @@
+# Upstream files (source/, alpha/, root upstream docs) keep the exact bytes upstream
+# committed (mostly CRLF, a few LF), so upstream merges stay clean. "-text" also
+# neutralizes this machine's core.autocrlf=true for them. See CLAUDE.md "Line endings".
+* -text
+
+# Files we own: LF, normalized by git.
+/app/** text=auto eol=lf
+/docs/** text=auto eol=lf
+/CLAUDE.md text eol=lf
+/GLOSSARY.md text eol=lf
+/.gitattributes text eol=lf
+/.gitignore text eol=lf
+
+# Binary assets anywhere under our folders.
+*.png binary
+*.ico binary
+*.jpg binary
+*.dll binary
+*.exe binary
+
+# Our Windows batch files need CRLF (upstream ones are already covered by "* -text").
+/app/**/*.bat text eol=crlf
+/app/**/*.cmd text eol=crlf

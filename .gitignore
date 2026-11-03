@@ -1,0 +1,11 @@
+# Local task scratch (see CLAUDE.md)
+/tasks.md
+
+# Local tool output
+/.playwright-mcp/
+
+# Build output
+bin/
+obj/
+*.user
+.vs/

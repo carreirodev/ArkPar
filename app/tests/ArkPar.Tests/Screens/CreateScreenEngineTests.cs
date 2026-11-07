@@ -56,6 +56,44 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task PerFolderMakesASetInEachFolderThatVerifiesItsOwnPhotos()
+    {
+        WritePhoto("praia 01.jpg", 1);
+        WritePhoto(@"viagem\ônibus.jpg", 2);
+        WritePhoto(@"viagem\2019\aniversário.jpg", 3);
+        WritePhoto(@"viagem\2019\bolo.jpg", 4);
+        using var screen = NewScreen(StartEngine);
+
+        await screen.AddAsync([_folder]);
+        screen.Mode = CreationMode.PerFolder;
+        await WaitUntilAsync(() => screen.Estimate is not null, "the estimate");
+
+        Assert.IsTrue(screen.CanCreate, screen.EstimateProblem);
+        Assert.AreEqual("3 conjuntos serão criados", screen.SetsTitle);
+        var estimate = screen.Estimate!;
+
+        await screen.CreateAsync().WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+
+        Assert.AreEqual(CreateStage.Created, screen.Stage, screen.Details);
+        var sets = new (string RecoveryFile, string Photos)[]
+        {
+            (Path.Combine(_folder, "Fotos de família.par2"), "praia 01.jpg"),
+            (Path.Combine(_folder, "viagem", "viagem.par2"), "ônibus.jpg"),
+            (Path.Combine(_folder, "viagem", "2019", "2019.par2"), "aniversário.jpg, bolo.jpg"),
+        };
+        Assert.AreEqual(estimate.TotalSize, sets.Sum(set => Selection.RecoverySetFiles(set.RecoveryFile).Sum(file => new FileInfo(file).Length)), "The estimate is what the engine made.");
+        foreach (var (recoveryFile, photos) in sets)
+        {
+            using var verify = new VerifyScreen((command, progress) => EngineRun.Start(command, progress, EngineProcess.ExePath));
+            await verify.VerifyAsync(recoveryFile).WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+
+            Assert.AreEqual(VerifyStage.Verified, verify.Stage, verify.Details);
+            Assert.AreEqual(photos, string.Join(", ", verify.CompleteFiles.Select(file => file.Name).Order(StringComparer.Ordinal)), recoveryFile);
+            Assert.AreEqual(new FileCounts(Complete: photos.Split(", ").Length, Damaged: 0, Missing: 0, Misnamed: 0), verify.Counts, recoveryFile);
+        }
+    }
+
+    [TestMethod]
     public async Task CanceledCreateLeavesOnlyThePhotos()
     {
         using var screen = await StartSlowCreateAsync();

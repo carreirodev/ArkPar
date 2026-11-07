@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using System.Runtime.ExceptionServices;
 using ArkPar.Engine;
 
 namespace ArkPar.Screens;
@@ -13,13 +14,13 @@ public enum CreateStage
     /// <summary>Reading what was chosen from disk.</summary>
     Reading,
 
-    /// <summary>Files chosen: the user sets the redundancy, then creates.</summary>
+    /// <summary>Files chosen: the user picks the mode and the redundancy, then creates.</summary>
     Ready,
     Creating,
     Created,
     Canceled,
 
-    /// <summary>The engine could not create the set, or the set it replaces could not be moved away.</summary>
+    /// <summary>The engine could not create a set, or the set it replaces could not be moved away.</summary>
     Failed,
 }
 
@@ -29,9 +30,17 @@ public sealed record Choice(string Text, int? Value)
     public override string ToString() => Text;
 }
 
+/// <summary>A creation mode as the screen offers it, with what it does on the example every mode uses.</summary>
+public sealed record ModeChoice(CreationMode Mode, string Title, string Explanation)
+{
+    /// <summary>The title: what a screen reader says for the option.</summary>
+    public override string ToString() => Title;
+}
+
 /// <summary>
-/// The Create screen, in single set mode: one recovery set covering everything chosen, subfolders included,
-/// saved in the folder chosen. Use it from the screen's thread; the engine's progress is brought back to it.
+/// The Create screen: the files chosen, split into recovery sets by the mode chosen (<see cref="CreationPlan"/>),
+/// all made with the same redundancy and Avançado settings, one after another. Use it from the screen's thread;
+/// the engine's progress is brought back to it.
 /// </summary>
 public sealed class CreateScreen : Observable, IDisposable
 {
@@ -46,26 +55,17 @@ public sealed class CreateScreen : Observable, IDisposable
 
     private const string Automatic = "Automático";
 
-    /// <summary>Added to the names of a replaced set while it waits aside (on a drive without a Recycle Bin).</summary>
-    private const string AsideSuffix = ".anterior";
-
-    /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
-    private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
-
     private readonly Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> _startEngine;
     private readonly Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> _runTrial;
     private readonly Action<IReadOnlyList<string>> _recycle;
     private readonly Func<string, bool> _hasRecycleBin;
     private IEngineRun? _run;
-    private EngineCommand.Create? _creating;
+    private SetCreation? _creating;
     private int _runNumber;
+    private bool _cancelRequested;
     private bool _disposed;
 
-    // What the create under way did with the set it replaces: sent it to the Recycle Bin, or set it aside.
-    private bool _replacedToRecycleBin;
-    private List<(string Original, string Aside)>? _setAside;
-
-    // The estimate: one trial at a time; a change while one runs asks for one more, with the latest settings.
+    // The estimate: one round at a time, a trial for each set; a change while one runs stops it and asks for one more.
     private bool _estimateAgain;
     private int _estimateNumber;
     private CancellationTokenSource? _estimateStop;
@@ -75,15 +75,20 @@ public sealed class CreateScreen : Observable, IDisposable
 
     private CreateStage _stage;
     private Selection _selection = Selection.Empty;
+    private CreationMode _mode = CreationMode.SingleSet;
+    private CreationPlan _plan = CreationPlan.Empty;
     private int _redundancy = DefaultRedundancy;
     private Choice _blockSize;
     private int? _recoveryFileCount;
     private Choice _memory;
-    private RecoveryEstimate? _estimate;
+    private CreationEstimate? _estimate;
     private bool _isEstimating;
+    private int _estimatedSets;
     private string? _estimateProblem;
-    private bool _replacesExisting;
+    private int _existingSets;
+    private bool _existingSetsUnknown;
     private string _heading = "Criar";
+    private string? _setProgressText;
     private string _activityText = "";
     private double? _percent;
     private bool _isPaused;
@@ -107,6 +112,22 @@ public sealed class CreateScreen : Observable, IDisposable
         _blockSize = BlockSizes[0];
         _memory = MemoryLimits[0];
     }
+
+    /// <summary>
+    /// The creation modes, each explained on the same example: <c>D:\Fotos\2019</c> chosen, holding
+    /// "01 - Réveillon" and "07 - Viagem Bahia", with "Praia do Forte" inside the latter.
+    /// </summary>
+    public static IReadOnlyList<ModeChoice> Modes { get; } =
+    [
+        new(CreationMode.SingleSet, "Um conjunto para tudo",
+            "Um só conjunto protege tudo o que foi escolhido, com as subpastas. Ex.: escolhendo D:\\Fotos\\2019, sai 1 conjunto em 2019."),
+        new(CreationMode.PerSubfolder, "Um por subpasta",
+            "Cada subpasta ganha o seu conjunto, cobrindo tudo dentro dela. Ex.: 1 conjunto em 01 - Réveillon e 1 em 07 - Viagem Bahia, este cobrindo também Praia do Forte. Arquivos soltos em 2019 ganham um conjunto só deles."),
+        new(CreationMode.PerFolder, "Um por pasta",
+            "Cada pasta que tem arquivos ganha o seu conjunto, cobrindo só os arquivos dela. Ex.: 1 conjunto em 01 - Réveillon, 1 em 07 - Viagem Bahia e 1 em Praia do Forte."),
+        new(CreationMode.PerFile, "Um por arquivo",
+            "Cada arquivo ganha o seu conjunto, ao lado dele. Ex.: cada foto de 01 - Réveillon, 07 - Viagem Bahia e Praia do Forte ganha o seu, como IMG_4469.JPG.par2 ao lado de IMG_4469.JPG."),
+    ];
 
     /// <summary>The block sizes offered under Avançado, in bytes. The engine raises one too small for the files.</summary>
     public static IReadOnlyList<Choice> BlockSizes { get; } =
@@ -133,6 +154,7 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(IsReading));
                 Announce(nameof(CanChoose));
                 Announce(nameof(CanCreate));
+                Announce(nameof(CanCancel));
             }
         }
     }
@@ -141,7 +163,7 @@ public sealed class CreateScreen : Observable, IDisposable
 
     public bool IsReading => Stage == CreateStage.Reading;
 
-    /// <summary>Files can be added or the choice cleared: not while reading or creating.</summary>
+    /// <summary>Files can be added, the mode changed or the choice cleared: not while reading or creating.</summary>
     public bool CanChoose => Stage is not (CreateStage.Reading or CreateStage.Creating);
 
     public string Heading { get => _heading; private set => Set(ref _heading, value); }
@@ -156,25 +178,25 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(Tree));
                 Announce(nameof(Summary));
                 Announce(nameof(HasSelection));
-                Announce(nameof(SelectionProblem));
                 Announce(nameof(SelectionWarning));
-                Announce(nameof(RecoveryFile));
-                Announce(nameof(SaveIn));
+                Announce(nameof(SelectionProblem));
+                Announce(nameof(ReplaceWarning));
                 Announce(nameof(CanCreate));
+                Plan = CreationPlan.For(value, Mode);
             }
         }
     }
 
     public bool HasSelection => Selection.Roots.Count > 0;
 
-    /// <summary>What the set covers, as a tree of folders and files.</summary>
+    /// <summary>What was chosen, as a tree of folders and files.</summary>
     public IReadOnlyList<SelectionNode> Tree => Selection.Tree;
 
     /// <summary>How many files and how much they hold, e.g. "412 arquivos · 3,1 GB".</summary>
     public string Summary => HasSelection ? Selection.Summary : "";
 
-    /// <summary>Why no set can be made of what was chosen; null when one can.</summary>
-    public string? SelectionProblem => Selection.Problem;
+    /// <summary>Why no set can be made of what was chosen, in this mode; null when one can.</summary>
+    public string? SelectionProblem => Selection.Problem ?? Plan.Problem;
 
     /// <summary>Folders left out because they could not be read; null when there are none.</summary>
     public string? SelectionWarning => Selection.Unreadable switch
@@ -184,11 +206,76 @@ public sealed class CreateScreen : Observable, IDisposable
         var folders => $"{folders.Count} pastas não puderam ser lidas e ficaram de fora.",
     };
 
-    /// <summary>The set's index file, in full: where the recovery files will be saved.</summary>
-    public string? RecoveryFile => Selection.RecoveryFile;
+    /// <summary>How the files chosen are split into sets. Not while reading or creating.</summary>
+    public CreationMode Mode
+    {
+        get => _mode;
+        set
+        {
+            if (!CanChoose)
+            {
+                throw new InvalidOperationException("The mode cannot change while reading or creating.");
+            }
 
-    /// <summary>The folder the recovery files go in, by name.</summary>
-    public string SaveIn => Selection.BaseDirectory is { } folder ? Selection.FolderName(folder) : "";
+            if (Set(ref _mode, value))
+            {
+                Plan = CreationPlan.For(Selection, value);
+            }
+        }
+    }
+
+    /// <summary>The sets the create will make, from what was chosen and the mode.</summary>
+    public CreationPlan Plan
+    {
+        get => _plan;
+        private set
+        {
+            if (!Set(ref _plan, value))
+            {
+                return;
+            }
+
+            Announce(nameof(Sets));
+            Announce(nameof(HasSets));
+            Announce(nameof(SetsTitle));
+            Announce(nameof(SelectionProblem));
+            Announce(nameof(SaveIn));
+            Announce(nameof(Destination));
+            Announce(nameof(EstimatingText));
+            Announce(nameof(CreateText));
+            Announce(nameof(ReplaceWarning));
+            Announce(nameof(ParFilesWarning));
+            Announce(nameof(CanCreate));
+            Estimate = null;
+            EstimateProblem = null;
+            CheckForExistingSets();
+            RequestEstimate();
+        }
+    }
+
+    /// <summary>The sets the create will make, each with where it goes.</summary>
+    public IReadOnlyList<PlannedSet> Sets => Plan.Sets;
+
+    public bool HasSets => Sets.Count > 0;
+
+    /// <summary>How many sets the create will make, e.g. "12 conjuntos serão criados".</summary>
+    public string SetsTitle => Sets.Count == 1 ? "1 conjunto será criado" : PtBrazil.Count(Sets.Count, "conjunto", "conjuntos") + " serão criados";
+
+    /// <summary>Where the recovery files will go: the single set's index file, or how many sets from which folder.</summary>
+    public string? Destination => Sets switch
+    {
+        [] => null,
+        [var only] => only.RecoveryFile,
+        _ => $"{PtBrazil.Count(Sets.Count, "conjunto", "conjuntos")} em {Selection.BaseDirectory}",
+    };
+
+    /// <summary>The folder the recovery files go in, by name, or how many folders they go in.</summary>
+    public string SaveIn => Sets.Select(set => set.BaseDirectory).Distinct(StringComparer.OrdinalIgnoreCase).ToList() switch
+    {
+        [] => "",
+        [var folder] => Selection.FolderName(folder),
+        var folders => PtBrazil.Count(folders.Count, "pasta", "pastas"),
+    };
 
     /// <summary>The redundancy, in whole percent, from <see cref="MinRedundancy"/> to <see cref="MaxRedundancy"/>.</summary>
     public int Redundancy
@@ -218,7 +305,7 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
-    /// <summary>How many recovery files to make, from 1 to <see cref="MaxRecoveryFiles"/>; null leaves it to the engine.</summary>
+    /// <summary>How many recovery files to make for each set, from 1 to <see cref="MaxRecoveryFiles"/>; null leaves it to the engine.</summary>
     public int? RecoveryFileCount
     {
         get => _recoveryFileCount;
@@ -243,8 +330,8 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
-    /// <summary>What the engine says the create will make; null until it has said, or when it could not.</summary>
-    public RecoveryEstimate? Estimate
+    /// <summary>What the engine says the create will make, every set together; null until it has said, or when it could not.</summary>
+    public CreationEstimate? Estimate
     {
         get => _estimate;
         private set
@@ -255,6 +342,7 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(RepairableText));
                 Announce(nameof(BlocksText));
                 Announce(nameof(RecoveryFilesText));
+                Announce(nameof(ParFilesWarning));
                 Announce(nameof(CanCreate));
             }
         }
@@ -273,52 +361,111 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
+    /// <summary>What the estimate is at: "Calculando…", or, with several sets, how many are done.</summary>
+    public string EstimatingText => Sets.Count > 1 ? $"Calculando… {_estimatedSets.ToString("N0", PtBrazil.Culture)} de {PtBrazil.Count(Sets.Count, "conjunto", "conjuntos")}" : "Calculando…";
+
+    private int EstimatedSets
+    {
+        get => _estimatedSets;
+        set
+        {
+            if (Set(ref _estimatedSets, value))
+            {
+                Announce(nameof(EstimatingText));
+            }
+        }
+    }
+
     /// <summary>Why the sizes could not be worked out; null when they could.</summary>
     public string? EstimateProblem { get => _estimateProblem; private set => Set(ref _estimateProblem, value); }
 
-    /// <summary>How much space the recovery files will take, e.g. "≈ 310 MB".</summary>
+    /// <summary>How much space the recovery files will take, every set together, e.g. "≈ 310 MB".</summary>
     public string SpaceText => Estimate is { } estimate ? "≈ " + SizeText.Of(estimate.TotalSize) : "—";
 
-    /// <summary>The most lost data they can rebuild, e.g. "≈ 310 MB".</summary>
-    public string RepairableText => Estimate is { } estimate ? "≈ " + SizeText.Of(estimate.RepairableSize) : "—";
+    /// <summary>
+    /// The most lost data they can rebuild, e.g. "≈ 310 MB". With several sets, the share each can rebuild of
+    /// its own files, e.g. "≈ 10% de cada conjunto": a set repairs only the damage in the files it protects.
+    /// </summary>
+    public string RepairableText => Estimate switch
+    {
+        null => "—",
+        { Sets: [var only] } => "≈ " + SizeText.Of(only.RepairableSize),
+        var estimate => $"≈ {PercentText(estimate.LeastRepairablePercent)} de cada conjunto",
+    };
 
     /// <summary>The blocks the engine will use, e.g. "240 blocos de 24 KB, 24 para recuperação".</summary>
-    public string BlocksText => Estimate is { } estimate
-        ? $"{PtBrazil.Count(estimate.SourceBlocks, "bloco", "blocos")} de {SizeText.Of(estimate.BlockSize)}, {estimate.RecoveryBlocks.ToString("N0", PtBrazil.Culture)} para recuperação"
-        : "";
-
-    /// <summary>How many recovery files the engine will make, the index aside, e.g. "1 arquivo de recuperação, além do índice".</summary>
-    public string RecoveryFilesText => Estimate is { } estimate
-        ? PtBrazil.Count(estimate.RecoveryFiles, "arquivo de recuperação", "arquivos de recuperação") + ", além do índice"
-        : "";
-
-    /// <summary>A set of the same name is already in the folder: creating replaces it, its files going to the Recycle Bin.</summary>
-    public bool ReplacesExisting
+    public string BlocksText => Estimate switch
     {
-        get => _replacesExisting;
+        null => "",
+        { Sets: [var only] } =>
+            $"{PtBrazil.Count(only.SourceBlocks, "bloco", "blocos")} de {SizeText.Of(only.BlockSize)}, {only.RecoveryBlocks.ToString("N0", PtBrazil.Culture)} para recuperação",
+        var estimate =>
+            $"{PtBrazil.Count(estimate.SourceBlocks, "bloco", "blocos")} em {PtBrazil.Count(estimate.Sets.Count, "conjunto", "conjuntos")}, {estimate.RecoveryBlocks.ToString("N0", PtBrazil.Culture)} para recuperação",
+    };
+
+    /// <summary>How many recovery files the engine will make, the indexes aside, e.g. "1 arquivo de recuperação, além do índice".</summary>
+    public string RecoveryFilesText => Estimate switch
+    {
+        null => "",
+        var estimate => PtBrazil.Count(estimate.RecoveryFiles, "arquivo de recuperação", "arquivos de recuperação")
+            + (estimate.Sets.Count == 1 ? ", além do índice" : $", além de {PtBrazil.Count(estimate.Sets.Count, "índice", "índices")}"),
+    };
+
+    /// <summary>In the per file mode, how many <c>.par2</c> files will appear among the files; otherwise null.</summary>
+    public string? ParFilesWarning => Mode == CreationMode.PerFile && Estimate is { } estimate
+        ? $"Vão aparecer {PtBrazil.Count(estimate.Par2Files, "arquivo .par2", "arquivos .par2")} nas pastas, ao lado dos arquivos protegidos."
+        : null;
+
+    /// <summary>How many of the sets are already in their folders, so creating replaces them, their files going to the Recycle Bin.</summary>
+    public int ExistingSets
+    {
+        get => _existingSets;
         private set
         {
-            if (Set(ref _replacesExisting, value))
+            if (Set(ref _existingSets, value))
             {
+                Announce(nameof(ReplacesExisting));
                 Announce(nameof(CreateText));
                 Announce(nameof(ReplaceWarning));
             }
         }
     }
 
-    public string CreateText => ReplacesExisting ? "Substituir arquivos de recuperação" : "Criar arquivos de recuperação";
+    public bool ReplacesExisting => ExistingSets > 0;
 
-    /// <summary>What happens to the set being replaced; null when there is none.</summary>
-    public string? ReplaceWarning => !ReplacesExisting
-        ? null
-        : "Já existe um conjunto com este nome nesta pasta. "
-            + (HasRecycleBin
-                ? "Os arquivos dele irão para a Lixeira."
-                : "Ele fica guardado ao lado até o novo ficar pronto, e então é apagado, porque este disco não tem Lixeira.");
+    public string CreateText => ReplacesExisting && ExistingSets == Sets.Count ? "Substituir arquivos de recuperação" : "Criar arquivos de recuperação";
 
-    /// <summary>Only once the engine has worked out the sizes for the current settings, so what is shown is what is made.</summary>
+    /// <summary>What happens to the sets being replaced; null when there are none.</summary>
+    public string? ReplaceWarning
+    {
+        get
+        {
+            if (_existingSetsUnknown)
+            {
+                return "Não foi possível conferir se estes conjuntos já existem nas pastas; os que existirem serão substituídos.";
+            }
+
+            var (which, theirFiles, oneAside) = (ExistingSets, Sets.Count) switch
+            {
+                (0, _) => (null, "", ""),
+                (_, 1) => ("Já existe um conjunto com este nome nesta pasta.", "Os arquivos dele", "Ele fica"),
+                (1, _) => ("1 destes conjuntos já existe e será substituído.", "Os arquivos dele", "Ele fica"),
+                (var existing, _) => ($"{existing.ToString("N0", PtBrazil.Culture)} destes conjuntos já existem e serão substituídos.", "Os arquivos deles", "Cada um fica"),
+            };
+            return which is null
+                ? null
+                : which + " " + (HasRecycleBin
+                    ? theirFiles + " irão para a Lixeira."
+                    : oneAside + " guardado ao lado até o novo ficar pronto, e então é apagado, porque este disco não tem Lixeira.");
+        }
+    }
+
+    /// <summary>Only once the engine has worked out the sizes of every set for the current settings, so what is shown is what is made.</summary>
     public bool CanCreate =>
-        CanChoose && Selection.Problem is null && HasSelection && Estimate is not null && !IsEstimating;
+        CanChoose && SelectionProblem is null && Sets.Count > 0 && Estimate is not null && !IsEstimating;
+
+    /// <summary>Which set is being made, when there are several, e.g. "Conjunto 3 de 12: 07 - Viagem Bahia"; otherwise null.</summary>
+    public string? SetProgressText { get => _setProgressText; private set => Set(ref _setProgressText, value); }
 
     /// <summary>What the engine is doing right now, e.g. "Criando os blocos de recuperação".</summary>
     public string ActivityText { get => _activityText; private set => Set(ref _activityText, value); }
@@ -338,8 +485,11 @@ public sealed class CreateScreen : Observable, IDisposable
 
     public bool IsPercentUnknown => Percent is null;
 
-    /// <summary>The engine is running, so it can be paused or canceled (not while the set it replaces is moved away).</summary>
+    /// <summary>The engine is running, so it can be paused (not while a set it replaces is moved away).</summary>
     public bool CanControl => Run is not null;
+
+    /// <summary>The create can be canceled: at any point, the sets already made staying.</summary>
+    public bool CanCancel => IsRunning && !_cancelRequested;
 
     public bool IsPaused
     {
@@ -395,8 +545,8 @@ public sealed class CreateScreen : Observable, IDisposable
     }
 
     /// <summary>
-    /// Whether the files of a set replaced in this folder go to the Recycle Bin: Windows keeps one only on
-    /// fixed disks, and deletes at once on USB sticks, memory cards and network folders.
+    /// Whether the files of a set replaced go to the Recycle Bin: Windows keeps one only on fixed disks, and
+    /// deletes at once on USB sticks, memory cards and network folders. Every set is on the drive chosen.
     /// </summary>
     private bool HasRecycleBin => Selection.BaseDirectory is { } folder && _hasRecycleBin(folder);
 
@@ -404,8 +554,8 @@ public sealed class CreateScreen : Observable, IDisposable
         !folder.StartsWith(@"\\", StringComparison.Ordinal) && new DriveInfo(folder).DriveType == DriveType.Fixed;
 
     /// <summary>
-    /// Adds <paramref name="paths"/> (files or folders) to what the set covers, reading them from disk off the
-    /// screen's thread, then asks the engine how big the set will be.
+    /// Adds <paramref name="paths"/> (files or folders) to what was chosen, reading them from disk off the
+    /// screen's thread, then asks the engine how big the sets will be.
     /// </summary>
     public async Task AddAsync(IEnumerable<string> paths)
     {
@@ -423,9 +573,10 @@ public sealed class CreateScreen : Observable, IDisposable
         Stage = CreateStage.Reading;
         Heading = "Criar";
 
+        Selection read;
         try
         {
-            Selection = await Task.Run(() => Selection.Read(all)).ConfigureAwait(true);
+            read = await Task.Run(() => Selection.Read(all)).ConfigureAwait(true);
         }
         catch (Exception failure)
         {
@@ -436,9 +587,9 @@ public sealed class CreateScreen : Observable, IDisposable
             return;
         }
 
-        Stage = HasSelection ? CreateStage.Ready : CreateStage.Idle;
-        CheckForExistingSet();
-        RequestEstimate();
+        // Ready before the plan, so the plan's estimate may start.
+        Stage = read.Roots.Count > 0 ? CreateStage.Ready : CreateStage.Idle;
+        Selection = read;
     }
 
     /// <summary>Forgets what was chosen.</summary>
@@ -453,7 +604,6 @@ public sealed class CreateScreen : Observable, IDisposable
         Selection = Selection.Empty;
         Estimate = null;
         EstimateProblem = null;
-        ReplacesExisting = false;
         Banner = null;
         Details = null;
         Heading = "Criar";
@@ -461,7 +611,8 @@ public sealed class CreateScreen : Observable, IDisposable
     }
 
     /// <summary>
-    /// Creates the set. Ends when the engine ends; any failure is shown on the screen (<see cref="Banner"/>,
+    /// Creates the sets, one after another; a set that fails stops the rest, and the sets already made stay.
+    /// Ends when the last engine ends; any failure is shown on the screen (<see cref="Banner"/>,
     /// <see cref="Details"/>), not thrown. Only when <see cref="CanCreate"/>.
     /// </summary>
     public async Task CreateAsync()
@@ -471,86 +622,41 @@ public sealed class CreateScreen : Observable, IDisposable
             throw new InvalidOperationException("Nothing to create.");
         }
 
-        var create = CommandFor(Selection);
-        var replaced = Selection.ExistingRecoveryFiles();
+        var sets = Sets;
         var hasRecycleBin = HasRecycleBin;
-        var runNumber = ++_runNumber;
-        _replacedToRecycleBin = false;
-        _setAside = null;
+        _cancelRequested = false;
         StopEstimate();
         Stage = CreateStage.Creating;
         Heading = "Criando";
-        ActivityText = replaced.Count == 0 ? "Preparando"
-            : hasRecycleBin ? "Levando o conjunto anterior para a Lixeira"
-            : "Guardando o conjunto anterior";
-        Percent = null;
-        IsPaused = false;
         Banner = null;
         Details = null;
 
-        try
+        var made = new List<SetResult>();
+        for (var index = 0; index < sets.Count; index++)
         {
-            // The engine would write over the index but leave the replaced set's recovery files beside the new ones.
-            if (replaced.Count > 0 && hasRecycleBin)
-            {
-                await Task.Run(() => _recycle(replaced)).ConfigureAwait(true);
-                _replacedToRecycleBin = true;
-            }
-            else if (replaced.Count > 0)
-            {
-                // No Recycle Bin on this drive: the set waits aside, so a create that does not finish loses nothing.
-                _setAside = await Task.Run(() => SetAside(replaced)).ConfigureAwait(true);
-            }
+            var set = sets[index];
+            SetProgressText = sets.Count > 1 ? $"Conjunto {(index + 1).ToString("N0", PtBrazil.Culture)} de {sets.Count.ToString("N0", PtBrazil.Culture)}: {set.Name}" : null;
+            ActivityText = "Preparando";
+            Percent = null;
+            IsPaused = false;
 
+            var result = await CreateSetAsync(set, hasRecycleBin).ConfigureAwait(true);
             if (_disposed)
             {
-                // The window closed meanwhile: start nothing that would outlive it, and give the set back.
-                RestoreSetAside();
+                // The window closed: nothing is shown any more.
                 return;
             }
 
-            ActivityText = "Preparando";
-
-            _creating = create;
-            Run = _startEngine(create, new UiProgress<EngineProgress>(progress =>
+            if (result.End != SetEnd.Created)
             {
-                // An update posted just before the task ended may arrive after it: ignore it then.
-                if (runNumber == _runNumber && IsRunning)
-                {
-                    Percent = progress.Percent;
-                    ActivityText = ActivityTextOf(progress.Activity);
-                }
-            }));
-        }
-        catch (Exception failure)
-        {
-            var movingAway = replaced.Count > 0 && !_replacedToRecycleBin && _setAside is null;
-            var (note, settleFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-            Fail(movingAway
-                    ? new Banner(BannerKind.Error, "Não foi possível tirar o conjunto anterior da pasta.", "Confira se algum dos arquivos dele está aberto em outro programa.")
-                    : new Banner(BannerKind.Error, "Não foi possível iniciar a criação.", Join("O ArkPar pode estar instalado de forma incompleta.", note, " ")),
-                Join(failure.ToString(), settleFailure));
-            return;
+                ShowStopped(sets, set, index, made, result);
+                return;
+            }
+
+            made.Add(result);
         }
 
-        EngineResult result;
-        try
-        {
-            result = await Run.Completion.ConfigureAwait(true);
-        }
-        catch (Exception failure)
-        {
-            // Never leave the screen stuck on "Criando": whatever failed is shown, with its details.
-            EndRun();
-            var leftover = await RemovePartialFilesAsync(create).ConfigureAwait(true);
-            var (note, settleFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-            Fail(new Banner(BannerKind.Error, "A criação terminou de forma inesperada.", Join(note, LeftoverText(create, leftover), " ")),
-                Join(Join(failure.ToString(), leftover), settleFailure));
-            return;
-        }
-
-        EndRun();
-        await ShowAsync(result, create).ConfigureAwait(true);
+        ShowCreated(made);
     }
 
     public void TogglePause()
@@ -564,7 +670,18 @@ public sealed class CreateScreen : Observable, IDisposable
         IsPaused = Run.IsPaused;
     }
 
-    public void Cancel() => Run?.Cancel();
+    /// <summary>Stops the create: the set under way is not made, nor the ones after it; the ones made stay.</summary>
+    public void Cancel()
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        _cancelRequested = true;
+        Announce(nameof(CanCancel));
+        Run?.Cancel();
+    }
 
     /// <summary>
     /// Ends the engine at once if it is still running, e.g. when the window closes, and removes the recovery
@@ -574,249 +691,171 @@ public sealed class CreateScreen : Observable, IDisposable
     {
         _disposed = true;
         StopEstimate();
-        if (Run is not { } run || _creating is not { } create)
-        {
-            return;
-        }
-
-        run.Dispose();
-
-        // The run may end with an error of its own; the partial files go either way, so only its end matters.
-        if (run.Completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(KillWait))
-        {
-            DeletePartialFiles(create);
-            RestoreSetAside();
-        }
+        _creating?.Kill();
     }
 
-    private void EndRun()
+    /// <summary>Makes one set: moves the set of the same name out of the way, then runs the engine.</summary>
+    private async Task<SetResult> CreateSetAsync(PlannedSet set, bool hasRecycleBin)
     {
-        Run?.Dispose();
-        Run = null;
-        _creating = null;
-        IsPaused = false;
-    }
-
-    private async Task ShowAsync(EngineResult result, EngineCommand.Create create)
-    {
-        if (result.Outcome == EngineOutcome.Completed)
+        var runNumber = ++_runNumber;
+        var creation = new SetCreation(CommandFor(set), hasRecycleBin, _startEngine, _recycle);
+        _creating = creation;
+        try
         {
-            // The set is made: nothing from here on may remove it, and a failure here only changes what is shown.
-            Stage = CreateStage.Created;
-            Heading = "Conjunto criado";
-            var (note, settleFailure) = await SettleReplacedSetAsync(created: true).ConfigureAwait(true);
-            CheckForExistingSet();
-            string? made;
-            string? sizeFailure = null;
+            IReadOnlyList<string> replaced;
             try
             {
-                var recoveryFiles = Selection.RecoverySetFiles(create.RecoveryFile);
-                var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
-                made = $"{PtBrazil.Count(recoveryFiles.Count, "arquivo", "arquivos")} · {SizeText.Of(size)}, em {create.BaseDirectory}";
+                // Read here, one folder listing: without a set to replace, the engine starts at once.
+                replaced = SetCreation.Replaced(set);
             }
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
             {
-                // A recovery file moved or locked right after it was made (an antivirus...): the set is still there.
-                made = $"Em {create.BaseDirectory}";
-                sizeFailure = failure.ToString();
+                return new SetResult(SetEnd.Failed, null, failure.ToString())
+                {
+                    Title = "Não foi possível ler a pasta do conjunto.",
+                    Hint = "Confira se o disco está acessível e tente de novo.",
+                };
             }
 
-            Banner = new Banner(BannerKind.Success, $"Os arquivos de recuperação protegem {Selection.Summary}.", Join(made, note, " "));
-            Details = Join(sizeFailure, settleFailure);
-            return;
-        }
+            if (replaced.Count > 0)
+            {
+                ActivityText = hasRecycleBin ? "Levando o conjunto anterior para a Lixeira" : "Guardando o conjunto anterior";
+            }
 
-        var leftover = await RemovePartialFilesAsync(create).ConfigureAwait(true);
-        var (replacedNote, restoreFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-        if (result.Outcome == EngineOutcome.Canceled)
+            return await creation.CreateAsync(
+                replaced,
+                mayStart: () => !_disposed && !_cancelRequested,
+                runChanged: run =>
+                {
+                    Run = run;
+                    if (run is null)
+                    {
+                        IsPaused = false;
+                    }
+                    else
+                    {
+                        ActivityText = "Preparando";
+                    }
+                },
+                new UiProgress<EngineProgress>(progress =>
+                {
+                    // An update posted just before the task ended may arrive after it: ignore it then.
+                    if (runNumber == _runNumber && Run is not null)
+                    {
+                        Percent = progress.Percent;
+                        ActivityText = ActivityTextOf(progress.Activity);
+                    }
+                })).ConfigureAwait(true);
+        }
+        finally
+        {
+            _creating = null;
+        }
+    }
+
+    private void ShowCreated(List<SetResult> made)
+    {
+        // The sets are made: nothing from here on may remove them, and a failure here only changes what is shown.
+        Stage = CreateStage.Created;
+        Heading = made.Count == 1 ? "Conjunto criado" : "Conjuntos criados";
+        SetProgressText = null;
+        CheckForExistingSets();
+
+        var where = Selection.BaseDirectory;
+        var madeText = made.All(set => set.FilesSize is not null)
+            ? $"{PtBrazil.Count(made.Sum(set => set.FileCount), "arquivo", "arquivos")} · {SizeText.Of(made.Sum(set => set.FilesSize ?? 0))}, em {where}"
+            : $"Em {where}";
+        var notes = made.Select(set => set.Note).OfType<string>().Distinct().Aggregate((string?)null, (all, note) => SetCreation.Join(all, note, " "));
+        var protects = made.Count == 1 ? Selection.Summary : $"{Selection.Summary} em {PtBrazil.Count(made.Count, "conjunto", "conjuntos")}";
+        Banner = new Banner(BannerKind.Success, $"Os arquivos de recuperação protegem {protects}.", SetCreation.Join(madeText, notes, " "));
+        Details = made.Select(set => set.Details).OfType<string>().Aggregate((string?)null, (all, details) => SetCreation.Join(all, details));
+    }
+
+    /// <summary>Shows a create that stopped at <paramref name="set"/>, canceled or failed, the sets before it made.</summary>
+    private void ShowStopped(IReadOnlyList<PlannedSet> sets, PlannedSet set, int index, List<SetResult> made, SetResult result)
+    {
+        SetProgressText = null;
+        CheckForExistingSets();
+        if (result.End == SetEnd.Canceled)
         {
             Stage = CreateStage.Canceled;
             Heading = "Criação cancelada";
-            CheckForExistingSet();
-            Banner = new Banner(BannerKind.Warning, "Nenhum arquivo de recuperação foi gravado.", Join(replacedNote, LeftoverText(create, leftover), " "));
-            Details = Join(leftover, restoreFailure);
-            RequestEstimate();
-            return;
+            var title = made.Count == 0
+                ? "Nenhum arquivo de recuperação foi gravado."
+                : $"{made.Count.ToString("N0", PtBrazil.Culture)} de {PtBrazil.Count(sets.Count, "conjunto", "conjuntos")} {(made.Count == 1 ? "ficou pronto" : "ficaram prontos")}; a criação foi cancelada.";
+            Banner = new Banner(BannerKind.Warning, title, result.Note);
         }
-
-        Fail(
-            new Banner(BannerKind.Error, "O motor não conseguiu criar os arquivos de recuperação.",
-                Join(Join("Confira se há espaço no disco e se a pasta permite gravar.", replacedNote, " "), LeftoverText(create, leftover), " ")),
-            Join(Join(result.Output, leftover), restoreFailure));
-    }
-
-    /// <summary>
-    /// Ends what this create did with the set it replaced. Made: the set waiting aside is deleted. Not made: it is
-    /// given back, or, if it went to the Recycle Bin, the user is told it is there.
-    /// </summary>
-    /// <returns>What to tell the user about that set, and why a step failed, if one did.</returns>
-    private async Task<(string? Note, string? Failure)> SettleReplacedSetAsync(bool created)
-    {
-        if (_setAside is null)
+        else
         {
-            return (_replacedToRecycleBin && !created ? "O conjunto anterior está na Lixeira, se quiser recuperá-lo." : null, null);
+            Stage = CreateStage.Failed;
+            Heading = "Não foi possível criar";
+            var where = sets.Count == 1
+                ? null
+                : $"Parou no conjunto \"{set.Name}\" ({(index + 1).ToString("N0", PtBrazil.Culture)} de {sets.Count.ToString("N0", PtBrazil.Culture)}); "
+                    + made.Count switch
+                    {
+                        0 => "nenhum ficou pronto.",
+                        1 => "1 ficou pronto.",
+                        var count => $"{count.ToString("N0", PtBrazil.Culture)} ficaram prontos.",
+                    };
+            Banner = new Banner(BannerKind.Error, result.Title ?? "Não foi possível criar.", SetCreation.Join(where, SetCreation.Join(result.Hint, result.Note, " "), " "));
         }
 
-        try
-        {
-            await Task.Run(created ? DeleteSetAside : RestoreSetAside).ConfigureAwait(true);
-            return (created ? null : "O conjunto anterior continua na pasta.", null);
-        }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-        {
-            // Said on screen: the set is still on disk, only under another name.
-            return (created
-                    ? $"O conjunto anterior ficou na pasta com \"{AsideSuffix}\" no fim do nome; pode apagá-lo."
-                    : $"O conjunto anterior ficou com \"{AsideSuffix}\" no fim do nome; tire esse final para usá-lo de novo.",
-                failure.ToString());
-        }
-    }
-
-    /// <summary>Renames <paramref name="files"/> aside, all or none: a move that fails puts back the ones already moved.</summary>
-    private static List<(string Original, string Aside)> SetAside(IReadOnlyList<string> files)
-    {
-        var moved = new List<(string Original, string Aside)>();
-        try
-        {
-            foreach (var file in files)
-            {
-                // Overwrites only what a create that never finished (the app closed hard) left aside before.
-                File.Move(file, file + AsideSuffix, overwrite: true);
-                moved.Add((file, file + AsideSuffix));
-            }
-        }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-        {
-            foreach (var (original, aside) in moved)
-            {
-                File.Move(aside, original);
-            }
-
-            throw;
-        }
-
-        return moved;
-    }
-
-    /// <summary>Gives the set waiting aside its names back (the half-written new one is already gone).</summary>
-    private void RestoreSetAside()
-    {
-        if (_setAside is not { } aside)
-        {
-            return;
-        }
-
-        _setAside = null;
-        foreach (var (original, asideName) in aside)
-        {
-            File.Move(asideName, original);
-        }
-    }
-
-    private void DeleteSetAside()
-    {
-        if (_setAside is not { } aside)
-        {
-            return;
-        }
-
-        _setAside = null;
-        foreach (var (_, asideName) in aside)
-        {
-            File.Delete(asideName);
-        }
-    }
-
-    private void Fail(Banner banner, string? details)
-    {
-        Stage = CreateStage.Failed;
-        Heading = "Não foi possível criar";
-        CheckForExistingSet();
-        Banner = banner;
-        Details = details;
+        Details = result.Details;
         RequestEstimate();
     }
 
-    /// <summary>Whether a set of this name is in the folder now, so Criar would replace it.</summary>
-    private void CheckForExistingSet() => ReplacesExisting = Selection.ExistingRecoveryFiles().Count > 0;
-
-    /// <summary>
-    /// Removes what a create that did not finish left behind. Every file of the set's name is from this run:
-    /// a set of that name it replaced was moved away before it started.
-    /// </summary>
-    /// <returns>Null when all went; otherwise why some could not, which the screen then shows.</returns>
-    private static async Task<string?> RemovePartialFilesAsync(EngineCommand.Create create)
+    /// <summary>How many of the sets are in their folders now, so Criar would replace them.</summary>
+    private void CheckForExistingSets()
     {
+        int existing;
         try
         {
-            await Task.Run(() => DeletePartialFiles(create)).ConfigureAwait(true);
-            return null;
+            existing = Sets
+                .GroupBy(set => set.BaseDirectory, StringComparer.OrdinalIgnoreCase)
+                .Sum(folder =>
+                {
+                    var names = Selection.SetNamesIn(folder.Key);
+                    return folder.Count(set => names.Contains(set.Name));
+                });
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            // A file held by another program (an antivirus scanning it...): the screen says which to delete.
-            return failure.ToString();
+            // A folder that cannot be listed now: the warning says it could not be checked, with the reason in Details.
+            _existingSetsUnknown = true;
+            ExistingSets = 0;
+            Announce(nameof(ReplaceWarning));
+            Details = failure.ToString();
+            return;
         }
+
+        _existingSetsUnknown = false;
+        ExistingSets = existing;
+        Announce(nameof(ReplaceWarning));
     }
 
-    private static void DeletePartialFiles(EngineCommand.Create create)
-    {
-        foreach (var file in Selection.RecoverySetFiles(create.RecoveryFile))
-        {
-            DeleteOnceReleased(file);
-        }
-    }
-
-    /// <summary>
-    /// Deletes <paramref name="file"/>, waiting up to about a second for Windows to let go of it: right after
-    /// the engine is ended at once, a file it was writing can still be held for a moment ("access denied").
-    /// </summary>
-    private static void DeleteOnceReleased(string file)
-    {
-        const int Attempts = 20;
-        for (var attempt = 1; ; attempt++)
-        {
-            try
-            {
-                File.Delete(file);
-                return;
-            }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException && attempt < Attempts)
-            {
-                Thread.Sleep(50);
-            }
-        }
-    }
-
-    private static string? LeftoverText(EngineCommand.Create create, string? leftover) => leftover is null
-        ? null
-        : $"Arquivos incompletos ficaram na pasta; apague os que começam com \"{Path.GetFileNameWithoutExtension(create.RecoveryFile)}\" e terminam em .par2.";
-
-    private static string? Join(string? first, string? second, string separator = "\n\n") =>
-        first is null ? second : second is null ? first : first + separator + second;
-
-    private EngineCommand.Create CommandFor(Selection selection) =>
-        new(
-            selection.RecoveryFile ?? throw new InvalidOperationException("No set can be made of this selection."),
-            selection.BaseDirectory ?? throw new InvalidOperationException("No set can be made of this selection."),
-            selection.Files,
-            Redundancy,
-            new CreateOptions(BlockSize.Value, RecoveryFileCount, Memory.Value));
+    private EngineCommand.Create CommandFor(PlannedSet set) =>
+        new(set.RecoveryFile, set.BaseDirectory, set.Files, Redundancy, new CreateOptions(BlockSize.Value, RecoveryFileCount, Memory.Value));
 
     private void RequestEstimate()
     {
         _estimateNumber++;
         if (_disposed
             || Stage is not (CreateStage.Ready or CreateStage.Created or CreateStage.Canceled or CreateStage.Failed)
-            || !HasSelection || Selection.Problem is not null)
+            || Sets.Count == 0 || SelectionProblem is not null)
         {
+            // An answer under way is not wanted: what it was for has changed.
+            _estimateAgain = false;
+            _estimateStop?.Cancel();
             return;
         }
 
-        // IsEstimating is set before the loop's first wait, so a trial that ends at once is never mistaken for one under way.
+        // IsEstimating is set before the loop's first wait, so a round that ends at once is never mistaken for one under way.
         if (IsEstimating)
         {
+            // Again and stopped, in this order: a trial that stops at once goes straight on to the next round.
             _estimateAgain = true;
+            _estimateStop?.Cancel();
             return;
         }
 
@@ -833,15 +872,16 @@ public sealed class CreateScreen : Observable, IDisposable
             {
                 _estimateAgain = false;
                 var number = _estimateNumber;
+                var sets = Sets;
                 using var stop = new CancellationTokenSource();
                 _estimateStop = stop;
                 try
                 {
-                    var estimate = await _runTrial(CommandFor(Selection), stop.Token).ConfigureAwait(true);
+                    var estimates = await EstimateSetsAsync(sets, stop.Token).ConfigureAwait(true);
                     if (number == _estimateNumber)
                     {
                         var clearDetails = _detailsFromEstimate;
-                        Estimate = estimate;
+                        Estimate = new CreationEstimate(sets, estimates);
                         EstimateProblem = null;
                         if (clearDetails)
                         {
@@ -878,12 +918,67 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
+    /// <summary>
+    /// The engine's trial of each set. A few run at once: each is a short engine run that reads only the files'
+    /// sizes. The first that fails stops the others, and its failure is thrown.
+    /// </summary>
+    private async Task<RecoveryEstimate[]> EstimateSetsAsync(IReadOnlyList<PlannedSet> sets, CancellationToken stop)
+    {
+        var estimates = new RecoveryEstimate[sets.Count];
+        var next = 0;
+        EstimatedSets = 0;
+        Exception? firstFailure = null;
+        using var round = CancellationTokenSource.CreateLinkedTokenSource(stop);
+
+        // Several trials wait at once, but every step between the waits runs on the screen's thread
+        // (ConfigureAwait(true)), one at a time: the shared counters need no locking.
+        async Task EstimateNextAsync()
+        {
+            for (var index = next++; index < sets.Count && !round.IsCancellationRequested; index = next++)
+            {
+                try
+                {
+                    estimates[index] = await _runTrial(CommandFor(sets[index]), round.Token).ConfigureAwait(true);
+                }
+                catch (Exception failure) when (failure is not OperationCanceledException || !round.IsCancellationRequested)
+                {
+                    // Kept and thrown once the others have stopped; the screen shows it.
+                    firstFailure ??= failure;
+                    round.Cancel();
+                    return;
+                }
+
+                EstimatedSets++;
+            }
+        }
+
+        try
+        {
+            await Task.WhenAll(Enumerable.Range(0, Math.Min(sets.Count, Environment.ProcessorCount)).Select(_ => EstimateNextAsync())).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (round.IsCancellationRequested)
+        {
+            // The others, stopped: by a newer change (thrown below) or by the first failure (thrown below).
+        }
+
+        stop.ThrowIfCancellationRequested();
+        if (firstFailure is not null)
+        {
+            ExceptionDispatchInfo.Throw(firstFailure);
+        }
+
+        return estimates;
+    }
+
     private void StopEstimate()
     {
         _estimateNumber++;
         _estimateAgain = false;
         _estimateStop?.Cancel();
     }
+
+    private static string PercentText(double percent) =>
+        percent.ToString(percent < 10 ? "0.#" : "0", PtBrazil.Culture) + "%";
 
     /// <summary>The engine's activity, in the user's words (print_progress_text in source/par2j: par2.c, create.c).</summary>
     private static string ActivityTextOf(string activity) => activity switch

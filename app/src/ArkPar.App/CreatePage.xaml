@@ -25,7 +25,7 @@
                 <!-- Header: where the set goes, and where the screen is. -->
                 <StackPanel Spacing="2">
                     <TextBlock
-                        Text="{x:Bind Screen.RecoveryFile, Mode=OneWay, TargetNullValue='Novo arquivo de recuperação'}"
+                        Text="{x:Bind Screen.Destination, Mode=OneWay, TargetNullValue='Novo arquivo de recuperação'}"
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                         IsTextSelectionEnabled="True" />
@@ -35,6 +35,11 @@
                 <!-- While the engine works. -->
                 <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.IsRunning, Mode=OneWay}">
                     <StackPanel Spacing="12">
+                        <TextBlock
+                            Text="{x:Bind Screen.SetProgressText, Mode=OneWay}"
+                            Style="{StaticResource BodyStrongTextBlockStyle}"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{x:Bind local:Ui.VisibleIfText(Screen.SetProgressText), Mode=OneWay, FallbackValue=Collapsed}" />
                         <TextBlock Text="{x:Bind Screen.ActivityText, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
                         <ProgressBar
                             Maximum="100"
@@ -43,7 +48,7 @@
                             ShowPaused="{x:Bind Screen.IsPaused, Mode=OneWay}" />
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                             <Button Content="{x:Bind Screen.PauseText, Mode=OneWay}" Click="OnTogglePause" IsEnabled="{x:Bind Screen.CanControl, Mode=OneWay}" />
-                            <Button Content="Cancelar" Click="OnCancel" IsEnabled="{x:Bind Screen.CanControl, Mode=OneWay}" />
+                            <Button Content="Cancelar" Click="OnCancel" IsEnabled="{x:Bind Screen.CanCancel, Mode=OneWay}" />
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -95,7 +100,31 @@
                     Message="{x:Bind Screen.SelectionWarning, Mode=OneWay}"
                     Visibility="{x:Bind local:Ui.VisibleIfText(Screen.SelectionWarning), Mode=OneWay, FallbackValue=Collapsed}" />
 
-                <!-- What the set covers, beside how much redundancy it gets. -->
+                <!-- How what was chosen is split into sets: picked each time, each mode explained on the same example. -->
+                <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.HasSelection, Mode=OneWay}">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Como dividir em conjuntos" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <!-- Filled in code (CreatePage), from the screen's own list. -->
+                        <RadioButtons
+                            x:Name="ModeButtons"
+                            MaxColumns="2"
+                            IsEnabled="{x:Bind Screen.CanChoose, Mode=OneWay}"
+                            SelectionChanged="OnModeChanged"
+                            AutomationProperties.Name="Como dividir em conjuntos">
+                            <RadioButtons.ItemTemplate>
+                                <DataTemplate x:DataType="screens:ModeChoice">
+                                    <!-- A width to wrap at, so two options fit side by side when the window is wide. -->
+                                    <StackPanel Spacing="2" Margin="0,0,12,8" MaxWidth="420">
+                                        <TextBlock Text="{x:Bind Title}" />
+                                        <TextBlock Text="{x:Bind Explanation}" Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </RadioButtons.ItemTemplate>
+                        </RadioButtons>
+                    </StackPanel>
+                </Border>
+
+                <!-- What was chosen, beside how much redundancy every set gets. -->
                 <Grid ColumnSpacing="16" Visibility="{x:Bind Screen.HasSelection, Mode=OneWay}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1.1*" />
@@ -180,7 +209,7 @@
                             </Grid>
                             <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind Screen.IsEstimating, Mode=OneWay}">
                                 <ProgressRing IsActive="True" Width="14" Height="14" />
-                                <TextBlock Text="Calculando…" Style="{StaticResource SecondaryCaption}" />
+                                <TextBlock Text="{x:Bind Screen.EstimatingText, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" />
                             </StackPanel>
                             <TextBlock
                                 Text="{x:Bind Screen.EstimateProblem, Mode=OneWay}"
@@ -194,6 +223,40 @@
                         </StackPanel>
                     </Border>
                 </Grid>
+
+                <!-- The sets the create will make and where each goes, before Criar. A list, as per file can mean thousands. -->
+                <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.HasSets, Mode=OneWay}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="{x:Bind Screen.SetsTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <InfoBar
+                            IsOpen="True"
+                            IsClosable="False"
+                            Severity="Warning"
+                            Message="{x:Bind Screen.ParFilesWarning, Mode=OneWay}"
+                            Visibility="{x:Bind local:Ui.VisibleIfText(Screen.ParFilesWarning), Mode=OneWay, FallbackValue=Collapsed}" />
+                        <ListView
+                            ItemsSource="{x:Bind Screen.Sets, Mode=OneWay}"
+                            SelectionMode="None"
+                            MaxHeight="240"
+                            AutomationProperties.Name="Conjuntos que serão criados">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="screens:PlannedSet">
+                                    <Grid ColumnSpacing="12" Padding="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind RecoveryFile}" />
+                                            <TextBlock Text="{x:Bind Where}" Style="{StaticResource SecondaryCaption}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind BaseDirectory}" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{x:Bind Meta}" Style="{StaticResource SecondaryCaption}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
 
                 <!-- Advanced settings, closed: each one starts on Automático, chosen by the engine. -->
                 <Expander

@@ -160,7 +160,7 @@ public sealed class SelectionTests
 
         var selection = Selection.Read([_trip]);
 
-        CollectionAssert.AreEqual(new[] { index, recoveryFile }, selection.ExistingRecoveryFiles().ToArray(), "Not the sets named \"07 - Viagem Bahia 2\" or \"07 - Viagem Bahia.vol2\".");
+        CollectionAssert.AreEqual(new[] { index, recoveryFile }, Selection.RecoverySetFiles(selection.RecoveryFile!).ToArray(), "Not the sets named \"07 - Viagem Bahia 2\" or \"07 - Viagem Bahia.vol2\".");
     }
 
     private string Write(string name, int size)

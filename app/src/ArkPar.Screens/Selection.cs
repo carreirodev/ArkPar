@@ -5,15 +5,13 @@ using System.Text.RegularExpressions;
 namespace ArkPar.Screens;
 
 /// <summary>
-/// What a single set covers: the files and folders chosen on the Create screen, read from disk, with every
-/// file inside the folders at any depth. Read it off the screen's thread: a big folder takes a while.
+/// The files and folders chosen on the Create screen, read from disk, with every file inside the folders at
+/// any depth. A <see cref="CreationPlan"/> splits them into recovery sets. Read it off the screen's thread:
+/// a big folder takes a while.
 /// </summary>
 public sealed partial class Selection
 {
-    /// <summary>The most files one recovery set can protect (the PAR2 format's limit, enforced by the engine).</summary>
-    public const int MaxFiles = 32768;
-
-    private const string RecoveryExtension = ".par2";
+    internal const string RecoveryExtension = ".par2";
 
     // Hidden and system files (Thumbs.db, desktop.ini) stay out, as in the engine's own folder search.
     private const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System;
@@ -29,17 +27,20 @@ public sealed partial class Selection
     /// <summary>The files and folders chosen, in full, without one inside another.</summary>
     public IReadOnlyList<string> Roots { get; }
 
-    /// <summary>Why no set can be made of this selection, in the user's words; null when one can.</summary>
+    /// <summary>Why no set can be made of this selection, whatever the mode, in the user's words; null when one can.</summary>
     public string? Problem { get; private init; }
 
-    /// <summary>The folder the set protects and lives in: the folder chosen, or the one holding everything chosen.</summary>
+    /// <summary>The folder holding what was chosen: the folder chosen, or the nearest one holding everything chosen. A single set protects it and lives in it.</summary>
     public string? BaseDirectory { get; private init; }
 
-    /// <summary>The set's index file, named after what was chosen, directly in <see cref="BaseDirectory"/>.</summary>
+    /// <summary>A single set's index file, named after what was chosen, directly in <see cref="BaseDirectory"/>.</summary>
     public string? RecoveryFile { get; private init; }
 
-    /// <summary>Every file the set will protect, in full.</summary>
+    /// <summary>Every file chosen, in full, in the order they were read from disk.</summary>
     public IReadOnlyList<string> Files { get; private init; } = [];
+
+    /// <summary>The size of each of <see cref="Files"/>, in bytes, in the same order.</summary>
+    public IReadOnlyList<long> FileSizes { get; private init; } = [];
 
     public long TotalSize { get; private init; }
 
@@ -67,7 +68,7 @@ public sealed partial class Selection
             return Empty;
         }
 
-        var files = new List<string>();
+        var files = new List<FileInfo>();
         var unreadable = new List<string>();
         var tree = roots
             .Select(root => Directory.Exists(root)
@@ -86,21 +87,14 @@ public sealed partial class Selection
         {
             BaseDirectory = baseDirectory,
             RecoveryFile = Path.Combine(baseDirectory, setName + RecoveryExtension),
-            Files = files,
+            Files = [.. files.Select(file => file.FullName)],
+            FileSizes = [.. files.Select(file => file.Length)],
             TotalSize = tree.Sum(node => node.Size),
             Tree = tree,
             Unreadable = unreadable,
-            Problem = files.Count switch
-            {
-                0 => "Não há arquivos para proteger no que foi escolhido.",
-                > MaxFiles => $"Um conjunto protege até {MaxFiles.ToString("N0", PtBrazil.Culture)} arquivos, e foram escolhidos {files.Count.ToString("N0", PtBrazil.Culture)}.",
-                _ => null,
-            },
+            Problem = files.Count == 0 ? "Não há arquivos para proteger no que foi escolhido." : null,
         };
     }
-
-    /// <summary>The recovery files already in <see cref="BaseDirectory"/> under this set's name.</summary>
-    public IReadOnlyList<string> ExistingRecoveryFiles() => RecoveryFile is null ? [] : RecoverySetFiles(RecoveryFile);
 
     /// <summary>The files of the set whose index is <paramref name="recoveryFile"/> that are on disk: the index and the files holding the recovery blocks.</summary>
     public static IReadOnlyList<string> RecoverySetFiles(string recoveryFile)
@@ -128,8 +122,35 @@ public sealed partial class Selection
         ];
     }
 
+    /// <summary>
+    /// The names of the sets with a file in <paramref name="folder"/>, compared ignoring case: "Viagem" for
+    /// "Viagem.par2" or "Viagem.vol0+19.par2". One read of the folder, however many sets are asked about.
+    /// </summary>
+    public static IReadOnlySet<string> SetNamesIn(string folder)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(folder))
+        {
+            return names;
+        }
+
+        foreach (var file in Directory.EnumerateFiles(folder, "*" + RecoveryExtension))
+        {
+            if (SetNameOf().Match(Path.GetFileName(file)) is { Success: true } match)
+            {
+                names.Add(match.Groups["name"].Value);
+            }
+        }
+
+        return names;
+    }
+
     [GeneratedRegex(@"^\.vol\d+\+\d+\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RecoveryFileSuffix();
+
+    // The shortest name before an optional ".vol0+19" and ".par2": "IMG_4469.JPG" for "IMG_4469.JPG.vol0+1.par2".
+    [GeneratedRegex(@"^(?<name>.+?)(\.vol\d+\+\d+)?\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex SetNameOf();
 
     private static List<string> RootsOf(List<string> fullPaths)
     {
@@ -142,13 +163,13 @@ public sealed partial class Selection
         return [.. existing.Where(path => !existing.Any(other => IsInside(path, other)))];
     }
 
-    private static SelectionNode ReadFile(FileInfo file, List<string> files)
+    private static SelectionNode ReadFile(FileInfo file, List<FileInfo> files)
     {
-        files.Add(file.FullName);
+        files.Add(file);
         return SelectionNode.File(file.Name, file.Length);
     }
 
-    private static SelectionNode ReadFolder(DirectoryInfo folder, List<string> files, List<string> unreadable)
+    private static SelectionNode ReadFolder(DirectoryInfo folder, List<FileInfo> files, List<string> unreadable)
     {
         var folders = new List<SelectionNode>();
         var folderFiles = new List<SelectionNode>();

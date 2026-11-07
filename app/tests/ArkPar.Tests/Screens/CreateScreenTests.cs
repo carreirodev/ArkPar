@@ -49,7 +49,7 @@ public sealed class CreateScreenTests : IDisposable
         Assert.AreEqual("2 arquivos · 5,7 MB", _screen.Summary);
         Assert.AreEqual("07 - Viagem Bahia", _screen.Tree.Single().Name);
         Assert.AreEqual("07 - Viagem Bahia", _screen.SaveIn);
-        Assert.AreEqual(RecoveryFile, _screen.RecoveryFile);
+        Assert.AreEqual(RecoveryFile, _screen.Destination);
         Assert.AreEqual(10, _screen.Redundancy);
         Assert.AreEqual("10%", _screen.RedundancyText);
 
@@ -78,20 +78,16 @@ public sealed class CreateScreenTests : IDisposable
         _screen.Redundancy = 20;
         _screen.Redundancy = 30;
 
-        Assert.HasCount(1, _trial.Trials, "One trial at a time.");
         Assert.AreEqual("30%", _screen.RedundancyText);
-
-        _trial.Trials[0].Finish(TenPercent);
-
-        Assert.IsNull(_screen.Estimate, "The answer for 10% is not shown under 30%.");
-        Assert.HasCount(2, _trial.Trials, "One more, with the latest value only.");
+        Assert.IsTrue(_trial.Trials.SkipLast(1).All(trial => trial.Stop.IsCancellationRequested), "The answers for 10% and 20% are not wanted.");
         Assert.AreEqual(30m, _trial.Last.Create.RedundancyPercent);
+        Assert.IsNull(_screen.Estimate);
         Assert.IsTrue(_screen.IsEstimating);
 
         var thirtyPercent = TenPercent with { RecoveryBlocks = 72, TotalSize = 1_851_000 };
         _trial.Last.Finish(thirtyPercent);
 
-        Assert.AreEqual(thirtyPercent, _screen.Estimate);
+        Assert.AreEqual(thirtyPercent, _screen.Estimate?.Sets.Single());
         Assert.IsFalse(_screen.IsEstimating);
     }
 
@@ -119,7 +115,7 @@ public sealed class CreateScreenTests : IDisposable
         _screen.BlockSize = CreateScreen.BlockSizes[3];
         _screen.RecoveryFileCount = 3;
         _screen.Memory = CreateScreen.MemoryLimits[4];
-        _trial.Trials[1].Finish(TenPercent);
+        _trial.Last.Finish(TenPercent);
 
         Assert.AreEqual(new CreateOptions(BlockSize: 1048576, RecoveryFileCount: 3, MemoryEighths: 4), _trial.Last.Create.Options);
         Assert.AreEqual("240 blocos de 24 KB, 24 para recuperação", _screen.BlocksText);

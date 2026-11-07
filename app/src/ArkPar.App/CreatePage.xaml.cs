@@ -20,6 +20,8 @@ public sealed partial class CreatePage : UserControl
         InitializeComponent();
 
         // Set here, from the screen's own values: an x:Bind to a static member crashes the XAML compiler (WMC9999).
+        ModeButtons.ItemsSource = CreateScreen.Modes;
+        ModeButtons.SelectedIndex = 0;
         BlockSizeBox.ItemsSource = CreateScreen.BlockSizes;
         MemoryBox.ItemsSource = CreateScreen.MemoryLimits;
         BlockSizeBox.SelectedIndex = 0;
@@ -141,6 +143,14 @@ public sealed partial class CreatePage : UserControl
         if (Screen.CanChoose)
         {
             Screen.Clear();
+        }
+    }
+
+    private void OnModeChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ModeButtons.SelectedItem is ModeChoice choice && Screen.CanChoose)
+        {
+            Screen.Mode = choice.Mode;
         }
     }
 

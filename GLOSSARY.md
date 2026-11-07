@@ -29,7 +29,7 @@ The creation mode that makes one recovery set covering everything selected, incl
 _Avoid_: normal mode
 
 **Per subfolder**:
-The creation mode that makes one recovery set for each direct subfolder of the selected folder, each covering everything inside it.
+The creation mode that makes one recovery set for each direct subfolder of the selected folder, each covering everything inside it. Files loose in the selected folder itself get one more set there, covering only them.
 _Avoid_: per-folder (ambiguous)
 
 **Per folder**:

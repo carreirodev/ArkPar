@@ -69,6 +69,32 @@ public sealed class EngineArgumentsTests
     }
 
     [TestMethod]
+    [DataRow(true, null, "/lc256")]
+    [DataRow(false, null, "/lc0")]
+    [DataRow(true, 4, "/lc260")]
+    [DataRow(false, 4, "/lc4")]
+    [DataRow(false, 32, "/lc32")]
+    public void ProcessingSetsTheThreadsAndTheGpuOfEveryTaskThatCalculates(bool useGpu, int? threads, string expected)
+    {
+        // "/lc#": # threads from 1 to 32, 0 for the physical cores, +256 for the GPU (source/par2j/Command_par2j.txt).
+        var processing = new EngineProcessing(useGpu, threads);
+        var create = new EngineCommand.Create(RecoveryFile, Folder, [], 10);
+
+        Assert.AreEqual(expected, EngineArguments.For(create, RunDirectory, processing)[2]);
+        Assert.AreEqual(expected, EngineArguments.ForTrial(create, RunDirectory, processing)[2]);
+        Assert.AreEqual(expected, EngineArguments.For(new EngineCommand.Verify(RecoveryFile), RunDirectory, processing)[2]);
+        Assert.AreEqual(expected, EngineArguments.For(new EngineCommand.Repair(RecoveryFile), RunDirectory, processing)[2]);
+    }
+
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(33)]
+    public void ThreadsOutsideWhatTheEngineTakesAreRefused(int threads)
+    {
+        Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new EngineProcessing(UseGpu: true, threads));
+    }
+
+    [TestMethod]
     public void ListTakesNoGpuOption()
     {
         // "l(ist) [uo,h] <par file>" in source/par2j/Command_par2j.txt.

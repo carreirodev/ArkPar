@@ -664,6 +664,7 @@ public sealed class CreateScreen : Observable, IDisposable
             if (result.End != SetEnd.Created)
             {
                 ShowStopped(sets, set, index, made.Count, result);
+                AnnounceFinished();
                 return;
             }
 
@@ -671,7 +672,14 @@ public sealed class CreateScreen : Observable, IDisposable
         }
 
         ShowCreated(made);
+        AnnounceFinished();
     }
+
+    /// <summary>
+    /// A create ended, with the <see cref="Banner"/> the screen now shows (so the app can tell a user who is looking
+    /// elsewhere). Once for all the sets, not once per set.
+    /// </summary>
+    public event EventHandler<Banner>? Finished;
 
     public void TogglePause()
     {
@@ -784,6 +792,14 @@ public sealed class CreateScreen : Observable, IDisposable
         var protects = made.Count == 1 ? files : $"{files} em {PtBrazil.Count(made.Count, "conjunto", "conjuntos")}";
         Banner = new Banner(BannerKind.Success, $"Os arquivos de recuperação protegem {protects}.", SetCreation.Join(madeText, notes, " "));
         Details = results.Select(result => result.Details).OfType<string>().Aggregate((string?)null, (all, details) => SetCreation.Join(all, details));
+    }
+
+    private void AnnounceFinished()
+    {
+        if (Banner is { } banner)
+        {
+            Finished?.Invoke(this, banner);
+        }
     }
 
     /// <summary>Shows a create that stopped at <paramref name="set"/>, canceled or failed, the <paramref name="made"/> sets before it made.</summary>

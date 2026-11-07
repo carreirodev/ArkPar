@@ -137,6 +137,8 @@ public sealed class CreateScreenModeTests : IDisposable
     public async Task SetsAreMadeOneAfterAnotherShowingWhichOne()
     {
         await ReadyAsync(CreationMode.PerFolder);
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
 
         var creating = _screen.CreateAsync();
 
@@ -149,6 +151,7 @@ public sealed class CreateScreenModeTests : IDisposable
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await WaitUntilAsync(() => _engine.Runs.Count == 2);
 
+        Assert.IsEmpty(finished, "Not after each set: the user hears once, when all are made.");
         Assert.AreEqual("Conjunto 2 de 2: Praia do Forte", _screen.SetProgressText);
         var second = (EngineCommand.Create)_engine.Last.Command;
         Assert.AreEqual(_beach, second.BaseDirectory);
@@ -164,6 +167,7 @@ public sealed class CreateScreenModeTests : IDisposable
             new Banner(BannerKind.Success, "Os arquivos de recuperação protegem 2 arquivos · 5,7 MB em 2 conjuntos.", $"4 arquivos · 1 KB, em {_trip}"),
             _screen.Banner);
         Assert.IsNull(_screen.SetProgressText);
+        CollectionAssert.AreEqual(new[] { _screen.Banner }, finished, "Announced once, with what the screen says.");
     }
 
     [TestMethod]
@@ -220,6 +224,8 @@ public sealed class CreateScreenModeTests : IDisposable
     public async Task AFailureStopsTheRestAndKeepsTheSetsAlreadyMade()
     {
         await ReadyAsync(CreationMode.PerFolder);
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
         var creating = _screen.CreateAsync();
         _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
@@ -234,6 +240,7 @@ public sealed class CreateScreenModeTests : IDisposable
             _screen.Banner);
         Assert.AreEqual("0x70, Espaço insuficiente no disco.", _screen.Details);
         Assert.HasCount(2, Directory.GetFiles(_trip, "*.par2"));
+        CollectionAssert.AreEqual(new[] { _screen.Banner }, finished, "A create that stops is announced too.");
     }
 
     [TestMethod]

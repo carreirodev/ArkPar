@@ -55,8 +55,9 @@ public sealed class EngineRun : IEngineRun
     }
 
     /// <summary>Starts <paramref name="command"/>. Progress is reported on the thread that reads the engine's output.</summary>
-    public static EngineRun Start(EngineCommand command, IProgress<EngineProgress>? progress = null, string? enginePath = null) =>
-        Start(command, runDirectory => EngineArguments.For(command, runDirectory), progress, enginePath ?? DefaultEnginePath, DefaultCancelGracePeriod);
+    /// <param name="processing">The GPU and threads the task may use; null for <see cref="EngineProcessing.Default"/>.</param>
+    public static EngineRun Start(EngineCommand command, IProgress<EngineProgress>? progress = null, string? enginePath = null, EngineProcessing? processing = null) =>
+        Start(command, runDirectory => EngineArguments.For(command, runDirectory, processing), progress, enginePath ?? DefaultEnginePath, DefaultCancelGracePeriod);
 
     /// <summary>Starts <paramref name="enginePath"/> with arguments built for a fresh run folder (tests swap them).</summary>
     internal static EngineRun Start(

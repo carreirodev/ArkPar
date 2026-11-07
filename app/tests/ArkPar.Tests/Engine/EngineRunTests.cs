@@ -164,12 +164,7 @@ public sealed class EngineRunTests(TestContext testContext)
     {
         var photo = WritePhoto("grande.jpg", 3, size: 100_000_000);
         var create = new EngineCommand.Create(RecoveryFile, _folder, [photo], RedundancyPercent: 100);
-        return EngineRun.Start(
-            create,
-            runDirectory => [.. EngineArguments.For(create, runDirectory).Select(argument => argument == EngineArguments.CpuAndGpu ? "/lc1" : argument)],
-            progress,
-            EngineProcess.ExePath,
-            EngineRun.DefaultCancelGracePeriod);
+        return EngineRun.Start(create, progress, EngineProcess.ExePath, new EngineProcessing(UseGpu: false, Threads: 1));
     }
 
     private Task WaitForCalculationAsync(RecordedProgress progress) =>

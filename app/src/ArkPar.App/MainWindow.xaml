@@ -10,7 +10,7 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid>
+    <Grid x:Name="Root">
         <Grid.RowDefinitions>
             <RowDefinition Height="40" />
             <RowDefinition Height="*" />
@@ -48,11 +48,19 @@
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="SettingsItem" Content="Configurações">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE713;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
 
-            <!-- Both pages stay alive, so switching never stops what the other is doing. -->
+            <!-- The pages stay alive, so switching never stops what another is doing. -->
             <Grid>
                 <local:CreatePage x:Name="Create" />
                 <local:VerifyPage x:Name="Verify" Visibility="Collapsed" />
+                <local:SettingsPage x:Name="SettingsView" Visibility="Collapsed" />
             </Grid>
         </NavigationView>
     </Grid>

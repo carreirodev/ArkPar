@@ -19,10 +19,11 @@ public sealed partial class VerifyPage : UserControl
         FolderVerification.Follow(Screen);
     }
 
-    public VerifyScreen Screen { get; } = new((command, progress) => EngineRun.Start(command, progress));
+    // Each task takes the GPU and cores set in Configurações when it starts.
+    public VerifyScreen Screen { get; } = new((command, progress) => EngineRun.Start(command, progress, processing: App.Settings.Processing));
 
     /// <summary>The folder verification; each set's detail is <see cref="Screen"/>.</summary>
-    public FolderVerifyScreen FolderVerification { get; } = new((command, progress) => EngineRun.Start(command, progress));
+    public FolderVerifyScreen FolderVerification { get; } = new((command, progress) => EngineRun.Start(command, progress, processing: App.Settings.Processing));
 
     /// <summary>The window the pickers open over.</summary>
     public void Attach(WindowId window) => _window = window;

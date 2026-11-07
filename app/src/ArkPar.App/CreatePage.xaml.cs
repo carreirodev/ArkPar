@@ -83,9 +83,10 @@ public sealed partial class CreatePage : UserControl
         treeNode.HasUnrealizedChildren = false;
     }
 
+    // Each task takes the GPU and cores set in Configurações when it starts.
     public CreateScreen Screen { get; } = new(
-        (command, progress) => EngineRun.Start(command, progress),
-        (create, stop) => EngineTrial.RunAsync(create, cancellationToken: stop),
+        (command, progress) => EngineRun.Start(command, progress, processing: App.Settings.Processing),
+        (create, stop) => EngineTrial.RunAsync(create, processing: App.Settings.Processing, cancellationToken: stop),
         (recoveryFile, stop) => EngineListing.RunAsync(recoveryFile, cancellationToken: stop),
         RecycleBin.Send);
 

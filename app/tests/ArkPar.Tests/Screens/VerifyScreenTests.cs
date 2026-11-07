@@ -148,6 +148,48 @@ public sealed class VerifyScreenTests : IDisposable
     }
 
     [TestMethod]
+    public async Task EachVerificationAndRepairIsAnnouncedOnceWithWhatTheScreenSays()
+    {
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
+
+        await VerifyAsync(FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged"));
+        var verified = _screen.Banner;
+        var repairing = _screen.RepairAsync();
+        _engine.Last.Finish(FakeEngine.Result(EngineOutcome.Completed, 16, "repair"));
+        await repairing;
+
+        CollectionAssert.AreEqual(new[] { verified, _screen.Banner }, finished);
+    }
+
+    [TestMethod]
+    public async Task VerificationThatCannotStartIsAnnouncedWithWhy()
+    {
+        using var screen = new VerifyScreen((_, _) => throw new FileNotFoundException("The engine (par2j64.exe) was not found."), lastWritten: _ => July14);
+        var finished = new List<Banner>();
+        screen.Finished += (_, banner) => finished.Add(banner);
+
+        await screen.VerifyAsync(RecoveryFile);
+
+        CollectionAssert.AreEqual(new[] { screen.Banner }, finished);
+        Assert.AreEqual(BannerKind.Error, finished.Single().Kind);
+    }
+
+    [TestMethod]
+    public async Task CanceledVerificationIsNotAnnounced()
+    {
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
+
+        var verifying = _screen.VerifyAsync(RecoveryFile);
+        _screen.Cancel();
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, Report: null, "Cancel"));
+        await verifying;
+
+        Assert.IsEmpty(finished, "The user canceled it there and then.");
+    }
+
+    [TestMethod]
     public async Task CanceledVerificationSaysSo()
     {
         var verifying = _screen.VerifyAsync(RecoveryFile);
@@ -324,6 +366,9 @@ public sealed class VerifyScreenTests : IDisposable
     [TestMethod]
     public async Task ResultAlreadyFoundIsShownWithoutRunningTheEngineAndCanBeRepaired()
     {
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
+
         await _screen.ShowAsync(RecoveryFile, FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged"));
 
         Assert.IsEmpty(_engine.Runs);
@@ -332,6 +377,7 @@ public sealed class VerifyScreenTests : IDisposable
         Assert.AreEqual(new Banner(BannerKind.Warning, "3 arquivos com problema. O reparo é possível.", "Precisa de 81 dos 120 blocos de recuperação disponíveis."), _screen.Banner);
         Assert.HasCount(3, _screen.ProblemFiles);
         Assert.IsTrue(_screen.CanRepair);
+        Assert.IsEmpty(finished, "Nothing ended here: the result was found before.");
 
         _ = _screen.RepairAsync();
 

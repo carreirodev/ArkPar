@@ -297,6 +297,12 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
     }
 
     /// <summary>
+    /// The verification or repair of the whole folder ended, with the <see cref="Banner"/> the summary now shows
+    /// (so the app can tell a user who is looking elsewhere). Once per folder, not once per set.
+    /// </summary>
+    public event EventHandler<Banner>? Finished;
+
+    /// <summary>
     /// Verifies the sets found, one after another. Canceling keeps what was verified; the rest is left unverified.
     /// Ends when the last engine ends; any failure is shown on its set, not thrown. Only when <see cref="CanStart"/>.
     /// </summary>
@@ -454,6 +460,10 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
             (true, true) => "Reparo cancelado",
         };
         ShowSummary();
+        if (Banner is { } banner)
+        {
+            Finished?.Invoke(this, banner);
+        }
     }
 
     /// <summary>One engine task; a failure to start it or to read its result ends it as an error, with the reason as its output.</summary>

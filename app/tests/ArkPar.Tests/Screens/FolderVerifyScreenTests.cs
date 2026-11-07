@@ -163,6 +163,8 @@ public sealed class FolderVerifyScreenTests : IDisposable
     public async Task SetsAreVerifiedOneAfterAnotherSayingWhichOfHowMany()
     {
         await _screen.ChooseAsync(Root);
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
 
         var verifying = _screen.StartAsync();
 
@@ -186,9 +188,12 @@ public sealed class FolderVerifyScreenTests : IDisposable
         Assert.IsNull(_screen.Percent, "A new set starts with no progress.");
         Assert.AreEqual("3 arquivos, todos íntegros", _screen.Folders[0].HealthText);
 
+        Assert.IsEmpty(finished, "Not after each set: the user hears once, about the whole folder.");
+
         await FinishEachAsync(verifying, Damaged, Complete, Complete, Complete);
         Assert.AreEqual(FolderVerifyStage.Done, _screen.Stage);
         Assert.IsNull(_screen.ProgressText);
+        CollectionAssert.AreEqual(new[] { _screen.Banner }, finished);
     }
 
     [TestMethod]
@@ -294,6 +299,8 @@ public sealed class FolderVerifyScreenTests : IDisposable
     {
         await VerifyAllAsync(Complete, Damaged, Damaged, Impossible, Complete);
         var verifications = _engine.Runs.Count;
+        var finished = new List<Banner>();
+        _screen.Finished += (_, banner) => finished.Add(banner);
 
         var repairing = _screen.RepairAllAsync();
 
@@ -310,6 +317,7 @@ public sealed class FolderVerifyScreenTests : IDisposable
         Assert.AreEqual(new FolderCounts(Complete: 2, Repairable: 0, Unrepairable: 1, Unverified: 0), _screen.Counts);
         Assert.AreEqual(new Banner(BannerKind.Error, "3 pastas: 2 íntegras e 1 com problema sem reparo.", Detail: null), _screen.Banner);
         Assert.IsFalse(_screen.CanRepairAll);
+        CollectionAssert.AreEqual(new[] { _screen.Banner }, finished);
     }
 
     [TestMethod]
@@ -370,6 +378,9 @@ public sealed class FolderVerifyScreenTests : IDisposable
         _found = new FoundSets([Natal, Photo1], []);
         await VerifyAllAsync(Damaged, Complete);
         await _screen.OpenAsync(_screen.Folders[0].Sets[0]);
+        var finished = new List<string>();
+        _screen.Finished += (_, _) => finished.Add("folder");
+        _detail.Finished += (_, _) => finished.Add("detail");
 
         var repairing = _detail.RepairAsync();
 
@@ -381,6 +392,7 @@ public sealed class FolderVerifyScreenTests : IDisposable
         Assert.AreEqual(SetHealth.Repaired, _screen.Folders[0].Sets[0].Health);
         Assert.AreEqual(new Banner(BannerKind.Success, "As 2 pastas estão íntegras.", Detail: null), _screen.Banner);
         Assert.IsTrue(_screen.CanOpen);
+        Assert.AreEqual("detail", string.Join(", ", finished), "The repair is announced once, by the screen that ran it.");
     }
 
     [TestMethod]

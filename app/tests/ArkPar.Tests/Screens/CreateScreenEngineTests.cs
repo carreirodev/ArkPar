@@ -155,16 +155,7 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
     private async Task<CreateScreen> StartSlowCreateAsync()
     {
         WritePhoto("grande.jpg", 3, size: 100_000_000);
-        var screen = NewScreen((command, progress) =>
-        {
-            var create = (EngineCommand.Create)command;
-            return EngineRun.Start(
-                create,
-                runDirectory => [.. EngineArguments.For(create, runDirectory).Select(argument => argument == EngineArguments.CpuAndGpu ? "/lc1" : argument)],
-                progress,
-                EngineProcess.ExePath,
-                EngineRun.DefaultCancelGracePeriod);
-        });
+        var screen = NewScreen((command, progress) => EngineRun.Start(command, progress, EngineProcess.ExePath, new EngineProcessing(UseGpu: false, Threads: 1)));
         await screen.AddAsync([_folder]);
         screen.Redundancy = 100;
         await WaitUntilAsync(() => screen.CanCreate, "the estimate");
@@ -178,7 +169,7 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
     private static CreateScreen NewScreen(Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> startEngine) =>
         new(
             startEngine,
-            (create, stop) => EngineTrial.RunAsync(create, EngineProcess.ExePath, stop),
+            (create, stop) => EngineTrial.RunAsync(create, EngineProcess.ExePath, cancellationToken: stop),
             (recoveryFile, stop) => EngineListing.RunAsync(recoveryFile, EngineProcess.ExePath, stop),
             files => Array.ForEach([.. files], File.Delete));
 

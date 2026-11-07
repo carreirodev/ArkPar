@@ -183,6 +183,12 @@ public sealed class VerifyScreen : Observable, IDisposable
     /// <summary>A verification or repair ended, and the screen shows its result.</summary>
     public event EventHandler<EngineEnded>? Ended;
 
+    /// <summary>
+    /// A verification or repair ended, with the <see cref="Banner"/> the screen now shows (so the app can tell a user
+    /// who is looking elsewhere). Not raised when it shows none: a verification the user canceled.
+    /// </summary>
+    public event EventHandler<Banner>? Finished;
+
     public void TogglePause()
     {
         if (_run is null)
@@ -256,13 +262,22 @@ public sealed class VerifyScreen : Observable, IDisposable
             return;
         }
 
-        // Once the screen shows the result, so a listener reads the screen as it now is.
-        Ended?.Invoke(this, new EngineEnded(command, result));
+        End(new EngineEnded(command, result));
     }
 
     /// <summary>A task that failed outside the engine ends as an engine error would, so a listener (a folder verification) learns of it too.</summary>
     private void AnnounceFailure(EngineCommand command, Exception failure) =>
-        Ended?.Invoke(this, new EngineEnded(command, new EngineResult(EngineOutcome.Error, ExitCode: -1, Report: null, failure.ToString())));
+        End(new EngineEnded(command, new EngineResult(EngineOutcome.Error, ExitCode: -1, Report: null, failure.ToString())));
+
+    // Once the screen shows the result, so a listener reads the screen as it now is.
+    private void End(EngineEnded ended)
+    {
+        Ended?.Invoke(this, ended);
+        if (Banner is { } banner)
+        {
+            Finished?.Invoke(this, banner);
+        }
+    }
 
     private void EndRun()
     {

@@ -25,7 +25,7 @@ public sealed class EngineTrialTests(TestContext testContext)
     {
         var create = Create(WritePhoto("praia 01.jpg", 1_000_000), WritePhoto(@"viagem\ônibus.jpg", 1_000_000));
 
-        var estimate = await EngineTrial.RunAsync(create, EngineProcess.ExePath, testContext.CancellationToken);
+        var estimate = await EngineTrial.RunAsync(create, EngineProcess.ExePath, processing: null, testContext.CancellationToken);
 
         Assert.AreEqual(1, estimate.RecoveryFiles);
         Assert.IsGreaterThan(0, estimate.RecoveryBlocks);
@@ -39,7 +39,7 @@ public sealed class EngineTrialTests(TestContext testContext)
     {
         var create = Create(WritePhoto("praia 01.jpg", 1000), Path.Combine(_folder, "sumiu.jpg"));
 
-        var failure = await Assert.ThrowsExactlyAsync<EngineTrialException>(() => EngineTrial.RunAsync(create, EngineProcess.ExePath, testContext.CancellationToken));
+        var failure = await Assert.ThrowsExactlyAsync<EngineTrialException>(() => EngineTrial.RunAsync(create, EngineProcess.ExePath, processing: null, testContext.CancellationToken));
 
         Assert.Contains("input file is not found", failure.Output);
     }
@@ -49,7 +49,7 @@ public sealed class EngineTrialTests(TestContext testContext)
     {
         var create = Create(WritePhoto("praia 01.jpg", 1000));
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() => EngineTrial.RunAsync(create, EngineProcess.ExePath, new CancellationToken(canceled: true)));
+        await Assert.ThrowsAsync<OperationCanceledException>(() => EngineTrial.RunAsync(create, EngineProcess.ExePath, cancellationToken: new CancellationToken(canceled: true)));
     }
 
     private EngineCommand.Create Create(params string[] files) =>

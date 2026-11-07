@@ -64,13 +64,14 @@ public sealed partial class FolderRow : UserControl
 
         // Nothing to show before the set is verified.
         OpenButton.Visibility = folder.HasSeveralSets || folder.Group is null ? Visibility.Collapsed : Visibility.Visible;
-        ListButton.Visibility = folder.HasProblemList ? Visibility.Visible : Visibility.Collapsed;
-        if (!folder.HasProblemList)
+        ListButton.Content = folder.SetListText;
+        ListButton.Visibility = folder.HasSetList ? Visibility.Visible : Visibility.Collapsed;
+        if (!folder.HasSetList)
         {
             ListButton.IsChecked = false;
         }
 
-        ProblemList.ItemsSource = folder.ProblemSets;
+        ProblemList.ItemsSource = folder.ListedSets;
         ProblemList.Visibility = ListButton.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 

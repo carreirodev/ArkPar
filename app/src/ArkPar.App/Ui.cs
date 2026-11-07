@@ -10,6 +10,8 @@ namespace ArkPar.App;
 /// <summary>Small conversions the screens' bindings call (x:Bind functions).</summary>
 internal static class Ui
 {
+    public static bool Not(bool value) => !value;
+
     public static Visibility VisibleUnless(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
     public static Visibility VisibleIfNeither(bool first, bool second) => first || second ? Visibility.Collapsed : Visibility.Visible;

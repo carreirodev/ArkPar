@@ -109,14 +109,14 @@
                         </Grid>
                     </Border>
 
-                    <!-- Every folder holding sets; a row's details open only while nothing runs. -->
+                    <!-- Every folder holding sets; a row opens only while nothing runs. -->
                     <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(FolderVerification.Folders), Mode=OneWay}">
                         <StackPanel>
                             <Grid Padding="0,0,0,6">
                                 <TextBlock Text="Pastas" Style="{StaticResource BodyStrongTextBlockStyle}" />
                                 <TextBlock Text="{x:Bind FolderVerification.FoundText, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
                             </Grid>
-                            <ContentControl IsEnabled="{x:Bind FolderVerification.CanOpen, Mode=OneWay}" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch">
+                            <ContentControl IsEnabled="{x:Bind local:Ui.Not(FolderVerification.IsRunning), Mode=OneWay}" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch">
                                 <ItemsRepeater ItemsSource="{x:Bind FolderVerification.Folders, Mode=OneWay}">
                                     <ItemsRepeater.ItemTemplate>
                                         <DataTemplate x:DataType="screens:CheckedFolder">

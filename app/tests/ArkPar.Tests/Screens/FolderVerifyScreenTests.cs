@@ -21,6 +21,7 @@ public sealed class FolderVerifyScreenTests : IDisposable
     private static readonly FoundSet[] AllSets = [RootSet, Natal, Photo1, Photo2, Photo3];
     private static readonly string[] FolderNames = ["2019", @"2019\Natal", @"2019\Praia"];
     private static readonly string[] FolderSets = ["2019.par2", "Natal.par2", "3 conjuntos"];
+    private static readonly string[] PraiaFiles = ["IMG_1.JPG.par2", "IMG_2.JPG.par2", "IMG_3.JPG.par2"];
 
     private static readonly EngineResult Complete = FakeEngine.Result(EngineOutcome.Completed, 0, "verify-complete");
     private static readonly EngineResult Damaged = FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged");
@@ -59,6 +60,11 @@ public sealed class FolderVerifyScreenTests : IDisposable
         CollectionAssert.AreEqual(FolderNames, _screen.Folders.Select(folder => folder.Name).ToArray());
         CollectionAssert.AreEqual(FolderSets, _screen.Folders.Select(folder => folder.SetsText).ToArray());
         Assert.AreEqual("Aguardando", _screen.Folders[0].HealthText);
+
+        var praia = _screen.Folders[2];
+        Assert.IsTrue(praia.HasSetList, "A folder with several sets opens into them before they are verified too.");
+        Assert.AreEqual("Ver os conjuntos", praia.SetListText);
+        CollectionAssert.AreEqual(PraiaFiles, praia.ListedSets.Select(set => set.FileName).ToArray());
         Assert.IsTrue(_screen.CanStart);
         Assert.IsNull(_screen.Banner);
     }
@@ -166,8 +172,9 @@ public sealed class FolderVerifyScreenTests : IDisposable
         Assert.AreEqual("3 arquivos com problema · o reparo é possível", natal.HealthText);
         Assert.AreEqual((HealthGroup?)HealthGroup.Unrepairable, praia.Group, "A folder is as bad as its worst set.");
         Assert.AreEqual("2 íntegros · 1 com problema sem reparo", praia.HealthText);
-        Assert.AreEqual("2 arquivos com problema · o reparo não é possível", praia.ProblemSets.Single().HealthText);
-        Assert.AreEqual("IMG_2.JPG.par2", praia.ProblemSets.Single().FileName);
+        Assert.AreEqual("2 arquivos com problema · o reparo não é possível", praia.ListedSets.Single().HealthText);
+        Assert.AreEqual("IMG_2.JPG.par2", praia.ListedSets.Single().FileName);
+        Assert.AreEqual("Ver os conjuntos com problema", praia.SetListText);
         Assert.IsTrue(_screen.CanRepairAll);
     }
 

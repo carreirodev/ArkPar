@@ -64,6 +64,7 @@ public sealed class CheckedSet : Observable
             if (Set(ref _health, value))
             {
                 Announce(nameof(Group));
+                Announce(nameof(HasResult));
                 Announce(nameof(HealthText));
             }
         }
@@ -71,6 +72,9 @@ public sealed class CheckedSet : Observable
 
     /// <summary>The summary's group; null while waiting, verifying or repairing.</summary>
     public HealthGroup? Group => GroupOf(Health);
+
+    /// <summary>The set was verified or repaired, so its detail can be opened.</summary>
+    public bool HasResult => Group is not null;
 
     /// <summary>What was found, e.g. "2 arquivos com problema · o reparo é possível".</summary>
     public string HealthText => Health switch

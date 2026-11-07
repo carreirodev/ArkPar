@@ -49,11 +49,11 @@
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                 <TextBlock x:Name="SetsText" Style="{StaticResource SecondaryCaption}" VerticalAlignment="Center" />
                 <Button x:Name="OpenButton" Content="Ver detalhes" Click="OnOpen" />
-                <ToggleButton x:Name="ListButton" Content="Ver os conjuntos com problema" Click="OnToggleList" />
+                <ToggleButton x:Name="ListButton" Click="OnToggleList" />
             </StackPanel>
         </Grid>
 
-        <!-- A folder with several sets: those with a problem, each opening its detail. -->
+        <!-- A folder with several sets: all of them before they are verified, then those with a problem, each opening its detail. -->
         <ItemsRepeater x:Name="ProblemList" Visibility="Collapsed" Margin="32,6,0,0">
             <ItemsRepeater.ItemTemplate>
                 <DataTemplate x:DataType="screens:CheckedSet">
@@ -66,7 +66,7 @@
                             <TextBlock Text="{x:Bind FileName}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind RecoveryFile}" />
                             <TextBlock Text="{x:Bind HealthText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
                         </StackPanel>
-                        <Button Grid.Column="1" Content="Ver detalhes" Click="OnOpenSet" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="Ver detalhes" Click="OnOpenSet" VerticalAlignment="Center" Visibility="{x:Bind HasResult, Mode=OneWay}" />
                     </Grid>
                 </DataTemplate>
             </ItemsRepeater.ItemTemplate>

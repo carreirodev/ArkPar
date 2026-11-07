@@ -75,11 +75,19 @@ public sealed class CheckedFolder : Observable
         }
     }
 
-    /// <summary>The sets with a problem or not verified, for a folder with several sets to list.</summary>
-    public IReadOnlyList<CheckedSet> ProblemSets => [.. Sets.Where(set => set.Group is not (null or HealthGroup.Complete))];
+    /// <summary>
+    /// What a folder with several sets opens into: every set while some are still to verify, so all the sets found
+    /// are listed before starting; then only those with a problem or not verified.
+    /// </summary>
+    public IReadOnlyList<CheckedSet> ListedSets => IsPending ? Sets : [.. Sets.Where(set => set.Group is not HealthGroup.Complete)];
 
-    /// <summary>The folder has several sets, some with a problem: it opens into the list of those.</summary>
-    public bool HasProblemList => HasSeveralSets && Sets.Any(set => set.Group is not (null or HealthGroup.Complete));
+    /// <summary>The folder has several sets, and some to list: it opens into <see cref="ListedSets"/>.</summary>
+    public bool HasSetList => HasSeveralSets && ListedSets.Count > 0;
+
+    /// <summary>The button that opens <see cref="ListedSets"/>.</summary>
+    public string SetListText => IsPending ? "Ver os conjuntos" : "Ver os conjuntos com problema";
+
+    private bool IsPending => Sets.Any(set => set.Group is null);
 
     private void OnSetChanged(object? sender, PropertyChangedEventArgs e)
     {
@@ -87,8 +95,9 @@ public sealed class CheckedFolder : Observable
         {
             Announce(nameof(Group));
             Announce(nameof(HealthText));
-            Announce(nameof(ProblemSets));
-            Announce(nameof(HasProblemList));
+            Announce(nameof(ListedSets));
+            Announce(nameof(HasSetList));
+            Announce(nameof(SetListText));
         }
     }
 }

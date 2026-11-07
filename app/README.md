@@ -49,3 +49,5 @@ It opens on the Create screen. To verify a recovery set as soon as the app opens
 ```
 dotnet run --project app/src/ArkPar.App -- "D:\Fotos\Viagem\Viagem.par2"
 ```
+
+On the Verify and repair screen, "Verificar uma pasta…" verifies every recovery set inside a folder, at any depth, and sums them up by folder; each folder opens into the set's detail.

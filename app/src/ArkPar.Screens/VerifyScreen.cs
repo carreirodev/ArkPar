@@ -155,6 +155,34 @@ public sealed class VerifyScreen : Observable, IDisposable
         return RunAsync(new EngineCommand.Repair(RecoveryFile));
     }
 
+    /// <summary>
+    /// Shows the verification of <paramref name="recoveryFile"/> already done elsewhere (a folder verification),
+    /// without running the engine again; <see cref="RepairAsync"/> then repairs it as after <see cref="VerifyAsync"/>.
+    /// </summary>
+    public Task ShowAsync(string recoveryFile, EngineResult result)
+    {
+        if (IsRunning)
+        {
+            throw new InvalidOperationException("A task is already running.");
+        }
+
+        // Progress still on its way from an earlier task belongs to a result no longer shown.
+        var runNumber = ++_runNumber;
+        RecoveryFile = recoveryFile;
+
+        // While the files' dates are read, the headline of the result shown before must not stand under this file.
+        Heading = "Verificar e reparar";
+        Banner = null;
+        CanRepair = false;
+        Details = null;
+        Percent = null;
+        ShowFiles(null);
+        return ShowResultAsync(result, isRepair: false, "Não foi possível verificar", runNumber);
+    }
+
+    /// <summary>A verification or repair ended, and the screen shows its result.</summary>
+    public event EventHandler<EngineEnded>? Ended;
+
     public void TogglePause()
     {
         if (_run is null)
@@ -208,22 +236,33 @@ public sealed class VerifyScreen : Observable, IDisposable
             Fail(failedHeading,
                 new Banner(BannerKind.Error, isRepair ? "Não foi possível iniciar o reparo." : "Não foi possível iniciar a verificação.", "O ArkPar pode estar instalado de forma incompleta."),
                 failure.ToString());
+            AnnounceFailure(command, failure);
             return;
         }
 
+        EngineResult result;
         try
         {
-            var result = await _run.Completion.ConfigureAwait(true);
+            result = await _run.Completion.ConfigureAwait(true);
             EndRun();
-            await ShowAsync(result, isRepair, failedHeading).ConfigureAwait(true);
+            await ShowResultAsync(result, isRepair, failedHeading, runNumber).ConfigureAwait(true);
         }
         catch (Exception failure)
         {
             // Never leave the screen stuck on "Verificando": whatever failed is shown, with its details.
             EndRun();
             Fail(failedHeading, new Banner(BannerKind.Error, "O motor terminou, mas o resultado não pôde ser lido.", Detail: null), failure.ToString());
+            AnnounceFailure(command, failure);
+            return;
         }
+
+        // Once the screen shows the result, so a listener reads the screen as it now is.
+        Ended?.Invoke(this, new EngineEnded(command, result));
     }
+
+    /// <summary>A task that failed outside the engine ends as an engine error would, so a listener (a folder verification) learns of it too.</summary>
+    private void AnnounceFailure(EngineCommand command, Exception failure) =>
+        Ended?.Invoke(this, new EngineEnded(command, new EngineResult(EngineOutcome.Error, ExitCode: -1, Report: null, failure.ToString())));
 
     private void EndRun()
     {
@@ -232,7 +271,7 @@ public sealed class VerifyScreen : Observable, IDisposable
         IsPaused = false;
     }
 
-    private async Task ShowAsync(EngineResult result, bool isRepair, string failedHeading)
+    private async Task ShowResultAsync(EngineResult result, bool isRepair, string failedHeading, int runNumber)
     {
         switch (result.Outcome)
         {
@@ -271,6 +310,11 @@ public sealed class VerifyScreen : Observable, IDisposable
         var allFixed = isRepair && problems > 0;
         var lastWritten = _lastWritten;
         var files = await Task.Run(() => FilesOf(report, lastWritten, allFixed)).ConfigureAwait(true);
+        if (runNumber != _runNumber)
+        {
+            // Another result was shown meanwhile (ShowAsync): this one is no longer wanted.
+            return;
+        }
 
         switch (result.Outcome)
         {
@@ -378,7 +422,7 @@ public sealed class VerifyScreen : Observable, IDisposable
     }
 
     /// <summary>The engine's activity, in the user's words: its English phrases, or the file it is reading.</summary>
-    private static string ActivityTextOf(string activity) => activity switch
+    internal static string ActivityTextOf(string activity) => activity switch
     {
         EngineProgress.CheckingFiles => "Conferindo os arquivos",
 

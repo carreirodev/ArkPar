@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using ArkPar.Engine;
+
 namespace ArkPar.Screens;
 
 /// <summary>Where the Verify and repair screen is.</summary>
@@ -48,3 +50,6 @@ public sealed record ProblemFile(string Name, ProblemKind Kind, string Tag, stri
 
 /// <summary>An intact file, shown as a row.</summary>
 public sealed record CompleteFile(string Name, string Size, string Date);
+
+/// <summary>An engine task the Verify and repair screen ran, and how it ended.</summary>
+public sealed record EngineEnded(EngineCommand Command, EngineResult Result);

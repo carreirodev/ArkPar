@@ -25,151 +25,282 @@
         BorderThickness="1,1,0,0"
         CornerRadius="8,0,0,0">
         <ScrollViewer>
-            <StackPanel Spacing="18" Padding="28,24" MaxWidth="1100">
+            <Grid Padding="28,24" MaxWidth="1100">
 
-                <!-- Header: which file, and where the screen is. -->
-                <StackPanel Spacing="2">
-                    <TextBlock
-                        Text="{x:Bind Screen.RecoveryFile, Mode=OneWay}"
-                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay, FallbackValue=Collapsed}"
-                        FontFamily="Cascadia Mono, Consolas"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        IsTextSelectionEnabled="True" />
-                    <TextBlock Text="{x:Bind Screen.Heading, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" />
-                </StackPanel>
-
-                <!-- Choosing a file: shown whenever nothing is running. -->
-                <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleUnless(Screen.IsRunning), Mode=OneWay}">
-                    <Button Content="Abrir arquivo .par2…" Click="OnChooseFile" Style="{StaticResource AccentButtonStyle}" />
-                    <Button
-                        Content="Verificar de novo"
-                        Click="OnVerifyAgain"
-                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay, FallbackValue=Collapsed}" />
-                </StackPanel>
-
-                <!-- While the engine works. -->
-                <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.IsRunning, Mode=OneWay}">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{x:Bind Screen.ActivityText, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                        <ProgressBar
-                            Maximum="100"
-                            Value="{x:Bind local:Ui.PercentOf(Screen.Percent), Mode=OneWay}"
-                            IsIndeterminate="{x:Bind Screen.IsPercentUnknown, Mode=OneWay}"
-                            ShowPaused="{x:Bind Screen.IsPaused, Mode=OneWay}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-                            <Button Content="{x:Bind Screen.PauseText, Mode=OneWay}" Click="OnTogglePause" />
-                            <Button Content="Cancelar" Click="OnCancel" />
-                        </StackPanel>
+                <!-- A folder verification (ArkPar.Screens.FolderVerifyScreen): every set inside a folder, summed up by folder. -->
+                <StackPanel Spacing="18" Visibility="{x:Bind FolderVerification.IsSummaryShown, Mode=OneWay}">
+                    <StackPanel Spacing="2">
+                        <TextBlock
+                            Text="{x:Bind FolderVerification.Folder, Mode=OneWay}"
+                            Visibility="{x:Bind local:Ui.VisibleIfText(FolderVerification.Folder), Mode=OneWay, FallbackValue=Collapsed}"
+                            FontFamily="Cascadia Mono, Consolas"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            IsTextSelectionEnabled="True" />
+                        <TextBlock Text="{x:Bind FolderVerification.Heading, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" />
                     </StackPanel>
-                </Border>
 
-                <!-- The result's headline, with Reparar when the set can fix the files. -->
-                <InfoBar
-                    IsOpen="{x:Bind Screen.HasBanner, Mode=OneWay}"
-                    IsClosable="False"
-                    Severity="{x:Bind local:Ui.SeverityOf(Screen.Banner), Mode=OneWay}"
-                    Title="{x:Bind Screen.Banner.Title, Mode=OneWay, FallbackValue=''}"
-                    Message="{x:Bind Screen.Banner.Detail, Mode=OneWay, FallbackValue=''}">
-                    <InfoBar.ActionButton>
-                        <Button
-                            Content="Reparar"
-                            Click="OnRepair"
-                            Style="{StaticResource AccentButtonStyle}"
-                            Visibility="{x:Bind Screen.CanRepair, Mode=OneWay}" />
-                    </InfoBar.ActionButton>
-                </InfoBar>
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleUnless(FolderVerification.IsRunning), Mode=OneWay}">
+                        <Button Content="Verificar os conjuntos" Click="OnStartFolder" Style="{StaticResource AccentButtonStyle}" Visibility="{x:Bind FolderVerification.CanStart, Mode=OneWay}" />
+                        <Button Content="Abrir arquivo .par2…" Click="OnChooseFile" />
+                        <Button Content="Verificar uma pasta…" Click="OnChooseFolder" />
+                    </StackPanel>
 
-                <!-- How many files are in each state. -->
-                <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfSet(Screen.Counts), Mode=OneWay, FallbackValue=Collapsed}">
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind FolderVerification.IsRunning, Mode=OneWay}">
+                        <StackPanel Spacing="12">
+                            <TextBlock
+                                Text="{x:Bind FolderVerification.ProgressText, Mode=OneWay}"
+                                Visibility="{x:Bind local:Ui.VisibleIfText(FolderVerification.ProgressText), Mode=OneWay, FallbackValue=Collapsed}"
+                                Style="{StaticResource BodyStrongTextBlockStyle}"
+                                TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{x:Bind FolderVerification.ActivityText, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                            <ProgressBar
+                                Maximum="100"
+                                Value="{x:Bind local:Ui.PercentOf(FolderVerification.Percent), Mode=OneWay}"
+                                IsIndeterminate="{x:Bind FolderVerification.IsPercentUnknown, Mode=OneWay}"
+                                ShowPaused="{x:Bind FolderVerification.IsPaused, Mode=OneWay}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                <Button Content="{x:Bind FolderVerification.PauseText, Mode=OneWay}" Click="OnFolderTogglePause" Visibility="{x:Bind FolderVerification.CanPause, Mode=OneWay}" />
+                                <Button Content="Cancelar" Click="OnFolderCancel" Visibility="{x:Bind FolderVerification.CanCancel, Mode=OneWay}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <InfoBar
+                        IsOpen="{x:Bind FolderVerification.HasBanner, Mode=OneWay}"
+                        IsClosable="False"
+                        Severity="{x:Bind local:Ui.SeverityOf(FolderVerification.Banner), Mode=OneWay}"
+                        Title="{x:Bind FolderVerification.Banner.Title, Mode=OneWay, FallbackValue=''}"
+                        Message="{x:Bind FolderVerification.Banner.Detail, Mode=OneWay, FallbackValue=''}">
+                        <InfoBar.ActionButton>
+                            <Button
+                                Content="Reparar todas as reparáveis"
+                                Click="OnRepairAll"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Visibility="{x:Bind FolderVerification.CanRepairAll, Mode=OneWay}" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
+                    <!-- How many folders are in each group. -->
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfSet(FolderVerification.Counts), Mode=OneWay, FallbackValue=Collapsed}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(FolderVerification.Counts.Complete), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
+                                <TextBlock Text="íntegras" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(FolderVerification.Counts.Repairable), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                <TextBlock Text="com problema reparável" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(FolderVerification.Counts.Unrepairable), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Text="com problema sem reparo" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" MinWidth="120" Visibility="{x:Bind local:Ui.VisibleIfPositive(FolderVerification.Counts.Unverified), Mode=OneWay, FallbackValue=Collapsed}">
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(FolderVerification.Counts.Unverified), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
+                                <TextBlock Text="não verificadas" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Every folder holding sets; a row's details open only while nothing runs. -->
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(FolderVerification.Folders), Mode=OneWay}">
                         <StackPanel>
-                            <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Complete), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
-                            <TextBlock Text="íntegros" Style="{StaticResource SecondaryCaption}" />
+                            <Grid Padding="0,0,0,6">
+                                <TextBlock Text="Pastas" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind FolderVerification.FoundText, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            </Grid>
+                            <ContentControl IsEnabled="{x:Bind FolderVerification.CanOpen, Mode=OneWay}" HorizontalContentAlignment="Stretch" HorizontalAlignment="Stretch">
+                                <ItemsRepeater ItemsSource="{x:Bind FolderVerification.Folders, Mode=OneWay}">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="screens:CheckedFolder">
+                                            <local:FolderRow Folder="{x:Bind}" OpenRequested="OnOpenSet" />
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </ContentControl>
                         </StackPanel>
-                        <StackPanel Grid.Column="1">
-                            <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Damaged), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                            <TextBlock Text="danificados" Style="{StaticResource SecondaryCaption}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Missing), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
-                            <TextBlock Text="faltando" Style="{StaticResource SecondaryCaption}" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="3" MinWidth="120" Visibility="{x:Bind local:Ui.VisibleIfPositive(Screen.Counts.Misnamed), Mode=OneWay, FallbackValue=Collapsed}">
-                            <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Misnamed), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
-                            <TextBlock Text="nome trocado" Style="{StaticResource SecondaryCaption}" />
-                        </StackPanel>
-                    </Grid>
-                </Border>
+                    </Border>
 
-                <!-- Damaged, missing and misnamed files first, with their thumbnails. -->
-                <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(Screen.ProblemFiles), Mode=OneWay}">
-                    <StackPanel Spacing="12">
-                        <Grid>
-                            <TextBlock Text="{x:Bind Screen.ProblemsHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                            <TextBlock Text="miniaturas do Windows" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
-                        </Grid>
-                        <ItemsRepeater ItemsSource="{x:Bind Screen.ProblemFiles, Mode=OneWay}">
-                            <ItemsRepeater.Layout>
-                                <UniformGridLayout MinItemWidth="200" MinColumnSpacing="12" MinRowSpacing="12" ItemsStretch="Fill" />
-                            </ItemsRepeater.Layout>
-                            <ItemsRepeater.ItemTemplate>
-                                <DataTemplate x:DataType="screens:ProblemFile">
-                                    <local:ProblemCard File="{x:Bind}" />
-                                </DataTemplate>
-                            </ItemsRepeater.ItemTemplate>
-                        </ItemsRepeater>
+                    <Expander
+                        Header="Detalhes técnicos"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        Visibility="{x:Bind local:Ui.VisibleIfText(FolderVerification.Details), Mode=OneWay, FallbackValue=Collapsed}">
+                        <TextBlock
+                            Text="{x:Bind FolderVerification.Details, Mode=OneWay}"
+                            FontFamily="Cascadia Mono, Consolas"
+                            FontSize="12"
+                            TextWrapping="Wrap"
+                            IsTextSelectionEnabled="True" />
+                    </Expander>
+                </StackPanel>
+
+                <!-- A single set: the one chosen, or a set's detail in a folder verification. -->
+                <StackPanel Spacing="18" Visibility="{x:Bind local:Ui.VisibleUnless(FolderVerification.IsSummaryShown), Mode=OneWay}">
+
+                    <!-- Header: which file, and where the screen is. -->
+                    <StackPanel Spacing="2">
+                        <TextBlock
+                            Text="{x:Bind Screen.RecoveryFile, Mode=OneWay}"
+                            Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay, FallbackValue=Collapsed}"
+                            FontFamily="Cascadia Mono, Consolas"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            IsTextSelectionEnabled="True" />
+                        <TextBlock Text="{x:Bind Screen.Heading, Mode=OneWay}" Style="{StaticResource TitleTextBlockStyle}" />
                     </StackPanel>
-                </Border>
 
-                <!-- The intact files. -->
-                <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(Screen.CompleteFiles), Mode=OneWay}">
-                    <StackPanel>
-                        <Grid Padding="0,0,0,6">
-                            <TextBlock Text="{x:Bind Screen.CompleteHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                            <TextBlock Text="{x:Bind Screen.CompleteSummary, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
-                        </Grid>
-                        <ItemsRepeater ItemsSource="{x:Bind Screen.CompleteFiles, Mode=OneWay}">
-                            <ItemsRepeater.ItemTemplate>
-                                <DataTemplate x:DataType="screens:CompleteFile">
-                                    <Grid ColumnSpacing="10" Padding="4,7" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="22" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="90" />
-                                            <ColumnDefinition Width="90" />
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse Width="9" Height="9" Fill="{ThemeResource SystemFillColorSuccessBrush}" />
-                                        <TextBlock Grid.Column="1" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Name}" />
-                                        <TextBlock Grid.Column="2" Text="{x:Bind Size}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                        <TextBlock Grid.Column="3" Text="{x:Bind Date}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsRepeater.ItemTemplate>
-                        </ItemsRepeater>
+                    <!-- Choosing a file or a folder: shown whenever nothing is running. -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleIfNeither(Screen.IsRunning, FolderVerification.IsActive), Mode=OneWay}">
+                        <Button Content="Abrir arquivo .par2…" Click="OnChooseFile" Style="{StaticResource AccentButtonStyle}" />
+                        <Button Content="Verificar uma pasta…" Click="OnChooseFolder" />
+                        <Button
+                            Content="Verificar de novo"
+                            Click="OnVerifyAgain"
+                            Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay, FallbackValue=Collapsed}" />
                     </StackPanel>
-                </Border>
 
-                <!-- What went wrong, in the engine's words, when something failed. -->
-                <Expander
-                    Header="Detalhes técnicos"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Stretch"
-                    Visibility="{x:Bind local:Ui.VisibleIfText(Screen.Details), Mode=OneWay, FallbackValue=Collapsed}">
-                    <TextBlock
-                        Text="{x:Bind Screen.Details, Mode=OneWay}"
-                        FontFamily="Cascadia Mono, Consolas"
-                        FontSize="12"
-                        TextWrapping="Wrap"
-                        IsTextSelectionEnabled="True" />
-                </Expander>
-            </StackPanel>
+                    <!-- A set's detail in a folder verification: back to the summary. -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleIfSecondOnly(Screen.IsRunning, FolderVerification.IsActive), Mode=OneWay}">
+                        <Button Click="OnBackToSummary" Style="{StaticResource AccentButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE72B;" FontSize="14" />
+                                <TextBlock Text="Voltar ao resumo" />
+                            </StackPanel>
+                        </Button>
+                        <Button Content="Verificar de novo" Click="OnVerifyAgain" />
+                    </StackPanel>
+
+                    <!-- While the engine works. -->
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.IsRunning, Mode=OneWay}">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="{x:Bind Screen.ActivityText, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                            <ProgressBar
+                                Maximum="100"
+                                Value="{x:Bind local:Ui.PercentOf(Screen.Percent), Mode=OneWay}"
+                                IsIndeterminate="{x:Bind Screen.IsPercentUnknown, Mode=OneWay}"
+                                ShowPaused="{x:Bind Screen.IsPaused, Mode=OneWay}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                <Button Content="{x:Bind Screen.PauseText, Mode=OneWay}" Click="OnTogglePause" />
+                                <Button Content="Cancelar" Click="OnCancel" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- The result's headline, with Reparar when the set can fix the files. -->
+                    <InfoBar
+                        IsOpen="{x:Bind Screen.HasBanner, Mode=OneWay}"
+                        IsClosable="False"
+                        Severity="{x:Bind local:Ui.SeverityOf(Screen.Banner), Mode=OneWay}"
+                        Title="{x:Bind Screen.Banner.Title, Mode=OneWay, FallbackValue=''}"
+                        Message="{x:Bind Screen.Banner.Detail, Mode=OneWay, FallbackValue=''}">
+                        <InfoBar.ActionButton>
+                            <Button
+                                Content="Reparar"
+                                Click="OnRepair"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Visibility="{x:Bind Screen.CanRepair, Mode=OneWay}" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+
+                    <!-- How many files are in each state. -->
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfSet(Screen.Counts), Mode=OneWay, FallbackValue=Collapsed}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Complete), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
+                                <TextBlock Text="íntegros" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Damaged), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Text="danificados" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Missing), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                <TextBlock Text="faltando" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="3" MinWidth="120" Visibility="{x:Bind local:Ui.VisibleIfPositive(Screen.Counts.Misnamed), Mode=OneWay, FallbackValue=Collapsed}">
+                                <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Misnamed), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
+                                <TextBlock Text="nome trocado" Style="{StaticResource SecondaryCaption}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Damaged, missing and misnamed files first, with their thumbnails. -->
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(Screen.ProblemFiles), Mode=OneWay}">
+                        <StackPanel Spacing="12">
+                            <Grid>
+                                <TextBlock Text="{x:Bind Screen.ProblemsHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="miniaturas do Windows" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            </Grid>
+                            <ItemsRepeater ItemsSource="{x:Bind Screen.ProblemFiles, Mode=OneWay}">
+                                <ItemsRepeater.Layout>
+                                    <UniformGridLayout MinItemWidth="200" MinColumnSpacing="12" MinRowSpacing="12" ItemsStretch="Fill" />
+                                </ItemsRepeater.Layout>
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="screens:ProblemFile">
+                                        <local:ProblemCard File="{x:Bind}" />
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- The intact files. -->
+                    <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(Screen.CompleteFiles), Mode=OneWay}">
+                        <StackPanel>
+                            <Grid Padding="0,0,0,6">
+                                <TextBlock Text="{x:Bind Screen.CompleteHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="{x:Bind Screen.CompleteSummary, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            </Grid>
+                            <ItemsRepeater ItemsSource="{x:Bind Screen.CompleteFiles, Mode=OneWay}">
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="screens:CompleteFile">
+                                        <Grid ColumnSpacing="10" Padding="4,7" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="22" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="90" />
+                                                <ColumnDefinition Width="90" />
+                                            </Grid.ColumnDefinitions>
+                                            <Ellipse Width="9" Height="9" Fill="{ThemeResource SystemFillColorSuccessBrush}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Name}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind Size}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind Date}" HorizontalAlignment="Right" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- What went wrong, in the engine's words, when something failed. -->
+                    <Expander
+                        Header="Detalhes técnicos"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch"
+                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.Details), Mode=OneWay, FallbackValue=Collapsed}">
+                        <TextBlock
+                            Text="{x:Bind Screen.Details, Mode=OneWay}"
+                            FontFamily="Cascadia Mono, Consolas"
+                            FontSize="12"
+                            TextWrapping="Wrap"
+                            IsTextSelectionEnabled="True" />
+                    </Expander>
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Border>
 </UserControl>

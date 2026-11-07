@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+using System.ComponentModel;
+
+namespace ArkPar.Screens;
+
+/// <summary>
+/// A folder of a folder verification: one line of the summary, with the sets directly in it. A folder with one
+/// set opens that set; one with several lists those with a problem.
+/// </summary>
+public sealed class CheckedFolder : Observable
+{
+    internal CheckedFolder(string name, string path, IReadOnlyList<CheckedSet> sets)
+    {
+        Name = name;
+        Path = path;
+        Sets = sets;
+        foreach (var set in sets)
+        {
+            set.PropertyChanged += OnSetChanged;
+        }
+    }
+
+    /// <summary>The folder inside the one chosen, starting with its name, e.g. <c>2019\Natal\Ceia</c>.</summary>
+    public string Name { get; }
+
+    /// <summary>The folder in full.</summary>
+    public string Path { get; }
+
+    /// <summary>The sets directly in the folder, by name.</summary>
+    public IReadOnlyList<CheckedSet> Sets { get; }
+
+    public bool HasSeveralSets => Sets.Count > 1;
+
+    /// <summary>Which sets the folder holds: "Praia.par2", or "300 conjuntos".</summary>
+    public string SetsText => Sets is [var only] ? only.FileName : PtBrazil.Count(Sets.Count, "conjunto", "conjuntos");
+
+    /// <summary>The folder's group: its worst set's, once every set has one; null before.</summary>
+    public HealthGroup? Group =>
+        Sets.Any(set => set.Group is null) ? null
+        : Sets.Any(set => set.Group == HealthGroup.Unrepairable) ? HealthGroup.Unrepairable
+        : Sets.Any(set => set.Group == HealthGroup.Repairable) ? HealthGroup.Repairable
+        : Sets.Any(set => set.Group == HealthGroup.Unverified) ? HealthGroup.Unverified
+        : HealthGroup.Complete;
+
+    /// <summary>
+    /// How the folder is: its set's text, or for several sets how many are in each group, e.g.
+    /// "298 íntegros · 2 com problema reparável".
+    /// </summary>
+    public string HealthText
+    {
+        get
+        {
+            if (Sets is [var only])
+            {
+                return only.HealthText;
+            }
+
+            int Count(Func<CheckedSet, bool> which) => Sets.Count(which);
+            var parts = new List<string>(5);
+            void Add(int count, string singular, string plural)
+            {
+                if (count > 0)
+                {
+                    parts.Add(PtBrazil.Count(count, singular, plural));
+                }
+            }
+
+            Add(Count(set => set.Group == HealthGroup.Complete), "íntegro", "íntegros");
+            Add(Count(set => set.Group == HealthGroup.Repairable), "com problema reparável", "com problema reparável");
+            Add(Count(set => set.Group == HealthGroup.Unrepairable), "com problema sem reparo", "com problema sem reparo");
+            Add(Count(set => set.Group == HealthGroup.Unverified), "não verificado", "não verificados");
+            Add(Count(set => set.Group is null), "aguardando", "aguardando");
+            return string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>The sets with a problem or not verified, for a folder with several sets to list.</summary>
+    public IReadOnlyList<CheckedSet> ProblemSets => [.. Sets.Where(set => set.Group is not (null or HealthGroup.Complete))];
+
+    /// <summary>The folder has several sets, some with a problem: it opens into the list of those.</summary>
+    public bool HasProblemList => HasSeveralSets && Sets.Any(set => set.Group is not (null or HealthGroup.Complete));
+
+    private void OnSetChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(CheckedSet.Health) or nameof(CheckedSet.HealthText))
+        {
+            Announce(nameof(Group));
+            Announce(nameof(HealthText));
+            Announce(nameof(ProblemSets));
+            Announce(nameof(HasProblemList));
+        }
+    }
+}

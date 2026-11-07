@@ -14,7 +14,7 @@ public sealed partial class Selection
     internal const string RecoveryExtension = ".par2";
 
     // Hidden and system files (Thumbs.db, desktop.ini) stay out, as in the engine's own folder search.
-    private const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System;
+    internal const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System;
 
     private Selection(IReadOnlyList<string> roots)
     {
@@ -149,7 +149,7 @@ public sealed partial class Selection
 
     // The shortest name before an optional ".vol0+19" and ".par2": "IMG_4469.JPG" for "IMG_4469.JPG.vol0+1.par2".
     [GeneratedRegex(@"^(?<name>.+?)(\.vol\d+\+\d+)?\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex SetNameOf();
+    internal static partial Regex SetNameOf();
 
     private static List<string> RootsOf(List<string> fullPaths)
     {
@@ -234,7 +234,7 @@ public sealed partial class Selection
     /// A symbolic link or junction: not followed, so a link back up the tree never loops. OneDrive's folders
     /// and files are reparse points too, but not links (no target), and they are read like any other.
     /// </summary>
-    private static bool IsLink(FileSystemInfo entry) =>
+    internal static bool IsLink(FileSystemInfo entry) =>
         (entry.Attributes & FileAttributes.ReparsePoint) != 0 && entry.LinkTarget is not null;
 
     private static bool IsRecoveryFile(string path) => path.EndsWith(RecoveryExtension, StringComparison.OrdinalIgnoreCase);

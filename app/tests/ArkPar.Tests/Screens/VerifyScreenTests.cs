@@ -321,6 +321,67 @@ public sealed class VerifyScreenTests : IDisposable
             changed);
     }
 
+    [TestMethod]
+    public async Task ResultAlreadyFoundIsShownWithoutRunningTheEngineAndCanBeRepaired()
+    {
+        await _screen.ShowAsync(RecoveryFile, FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged"));
+
+        Assert.IsEmpty(_engine.Runs);
+        Assert.AreEqual(VerifyStage.Verified, _screen.Stage);
+        Assert.AreEqual(RecoveryFile, _screen.RecoveryFile);
+        Assert.AreEqual(new Banner(BannerKind.Warning, "3 arquivos com problema. O reparo é possível.", "Precisa de 81 dos 120 blocos de recuperação disponíveis."), _screen.Banner);
+        Assert.HasCount(3, _screen.ProblemFiles);
+        Assert.IsTrue(_screen.CanRepair);
+
+        _ = _screen.RepairAsync();
+
+        Assert.AreEqual(new EngineCommand.Repair(RecoveryFile), _engine.Last.Command);
+    }
+
+    [TestMethod]
+    public async Task ShowingAResultReplacesTheOneOnScreen()
+    {
+        await VerifyAsync(FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged"));
+
+        await _screen.ShowAsync(@"P:\Natal\Natal.par2", FakeEngine.Result(EngineOutcome.Completed, 0, "verify-complete"));
+
+        Assert.AreEqual(@"P:\Natal\Natal.par2", _screen.RecoveryFile);
+        Assert.AreEqual(BannerKind.Success, _screen.Banner?.Kind);
+        Assert.IsFalse(_screen.CanRepair);
+        Assert.IsEmpty(_screen.ProblemFiles);
+    }
+
+    [TestMethod]
+    public async Task EachTaskThatEndsIsAnnouncedWithItsResult()
+    {
+        var ended = new List<EngineEnded>();
+        _screen.Ended += (_, e) => ended.Add(e);
+        var verified = FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged");
+        var repaired = FakeEngine.Result(EngineOutcome.Completed, 16, "repair");
+
+        await VerifyAsync(verified);
+        var repairing = _screen.RepairAsync();
+        _engine.Last.Finish(repaired);
+        await repairing;
+
+        CollectionAssert.AreEqual(
+            new[] { new EngineEnded(new EngineCommand.Verify(RecoveryFile), verified), new EngineEnded(new EngineCommand.Repair(RecoveryFile), repaired) },
+            ended);
+    }
+
+    [TestMethod]
+    public async Task TaskThatCannotStartIsAnnouncedAsAnError()
+    {
+        using var screen = new VerifyScreen((_, _) => throw new FileNotFoundException("The engine (par2j64.exe) was not found."));
+        var ended = new List<EngineEnded>();
+        screen.Ended += (_, e) => ended.Add(e);
+
+        await screen.VerifyAsync(RecoveryFile);
+
+        Assert.AreEqual(new EngineCommand.Verify(RecoveryFile), ended.Single().Command);
+        Assert.AreEqual(EngineOutcome.Error, ended.Single().Result.Outcome);
+    }
+
     private async Task VerifyAsync(EngineResult result)
     {
         var verifying = _screen.VerifyAsync(RecoveryFile);

@@ -40,6 +40,10 @@ _Avoid_: recursive mode
 The creation mode that makes one recovery set for each selected file.
 _Avoid_: individual mode
 
+**Folder verification**:
+Verifying every recovery set found inside a chosen folder, at any depth, one after another, then summing them up by folder: intact, with a problem the sets can repair, with a problem they cannot, or not verified (unreadable, or canceled first). A folder is as bad as its worst set.
+_Avoid_: batch mode, recursive verify
+
 **Stale set**:
 A recovery set that no longer matches the files it should protect: files were added, changed or removed after it was created, or now belong to other sets. New and changed files are unprotected until the set is recreated; a removed file may still be recoverable from it, so recreating it then waits for the user.
 _Avoid_: outdated, old set

@@ -90,7 +90,7 @@ public sealed class EngineRunTests(TestContext testContext)
         using var run = StartSlowCreate(progress);
         await WaitForCalculationAsync(progress);
 
-        run.Pause();
+        run.SetPaused(true);
         Assert.IsTrue(run.IsPaused);
         // The update in flight when the key arrives may still come; after that, nothing.
         await Task.Delay(1500, testContext.CancellationToken);
@@ -99,7 +99,7 @@ public sealed class EngineRunTests(TestContext testContext)
         Assert.HasCount(reportsWhilePaused, progress.Reports);
         Assert.IsFalse(run.Completion.IsCompleted);
 
-        run.Resume();
+        run.SetPaused(false);
         Assert.IsFalse(run.IsPaused);
         await WaitUntilAsync(() => progress.Reports.Count > reportsWhilePaused, "progress after resume");
         run.Cancel();
@@ -126,7 +126,7 @@ public sealed class EngineRunTests(TestContext testContext)
         var progress = new RecordedProgress();
         using var run = StartSlowCreate(progress);
         await WaitForCalculationAsync(progress);
-        run.Pause();
+        run.SetPaused(true);
         await Task.Delay(500, testContext.CancellationToken);
 
         run.Cancel();

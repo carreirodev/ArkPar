@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-using System.Globalization;
 using ArkPar.Engine;
 
 namespace ArkPar.Screens;
@@ -12,8 +11,6 @@ namespace ArkPar.Screens;
 /// </summary>
 public sealed class VerifyScreen : Observable, IDisposable
 {
-    private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
-
     private readonly Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> _startEngine;
     private readonly Func<string, DateTime?> _lastWritten;
     private IEngineRun? _run;
@@ -50,6 +47,7 @@ public sealed class VerifyScreen : Observable, IDisposable
             {
                 Announce(nameof(IsRunning));
                 Announce(nameof(ProblemsHeading));
+                Announce(nameof(CompleteHeading));
             }
         }
     }
@@ -58,6 +56,9 @@ public sealed class VerifyScreen : Observable, IDisposable
 
     /// <summary>The title over the problem cards: after a repair, they are the files it fixed.</summary>
     public string ProblemsHeading => Stage == VerifyStage.Repaired ? "Reparados" : "Com problema";
+
+    /// <summary>The title over the intact files: after a repair, the files it fixed are not among them.</summary>
+    public string CompleteHeading => Stage == VerifyStage.Repaired ? "Já estavam íntegros" : "Íntegros";
 
     public string Heading { get => _heading; private set => Set(ref _heading, value); }
 
@@ -103,7 +104,10 @@ public sealed class VerifyScreen : Observable, IDisposable
     /// <summary>What went wrong, in technical terms, when something failed; otherwise null.</summary>
     public string? Details { get => _details; private set => Set(ref _details, value); }
 
-    /// <summary>Verifies the recovery set of <paramref name="recoveryFile"/>. Ends when the engine ends.</summary>
+    /// <summary>
+    /// Verifies the recovery set of <paramref name="recoveryFile"/>. Ends when the engine ends; any failure
+    /// is shown on the screen (<see cref="Banner"/>, <see cref="Details"/>), not thrown.
+    /// </summary>
     public Task VerifyAsync(string recoveryFile)
     {
         if (IsRunning)
@@ -145,22 +149,22 @@ public sealed class VerifyScreen : Observable, IDisposable
 
     private async Task RunAsync(EngineCommand command)
     {
-        var repairing = command is EngineCommand.Repair;
+        var isRepair = command is EngineCommand.Repair;
+        var failedHeading = isRepair ? "Não foi possível reparar" : "Não foi possível verificar";
         var runNumber = ++_runNumber;
-        Stage = repairing ? VerifyStage.Repairing : VerifyStage.Verifying;
-        Heading = repairing ? "Reparando" : "Verificando";
-        ActivityText = repairing ? "Conferindo os arquivos antes de reparar" : "Lendo o arquivo de recuperação";
+        Stage = isRepair ? VerifyStage.Repairing : VerifyStage.Verifying;
+        Heading = isRepair ? "Reparando" : "Verificando";
+        ActivityText = isRepair ? "Conferindo os arquivos antes de reparar" : "Lendo o arquivo de recuperação";
         Percent = null;
         IsPaused = false;
         Banner = null;
         CanRepair = false;
         Details = null;
-        if (!repairing)
+        if (!isRepair)
         {
             ShowFiles(null);
         }
 
-        EngineResult result;
         try
         {
             // An update posted just before the task ended may arrive after it: ignore it then.
@@ -176,45 +180,48 @@ public sealed class VerifyScreen : Observable, IDisposable
         catch (Exception failure)
         {
             // Shown on screen with its details: the app has nothing better to do with it.
-            Fail(repairing ? "Não foi possível reparar" : "Não foi possível verificar",
-                new Banner(BannerKind.Error, repairing ? "Não foi possível iniciar o reparo." : "Não foi possível iniciar a verificação.", "O ArkPar pode estar instalado de forma incompleta."),
+            Fail(failedHeading,
+                new Banner(BannerKind.Error, isRepair ? "Não foi possível iniciar o reparo." : "Não foi possível iniciar a verificação.", "O ArkPar pode estar instalado de forma incompleta."),
                 failure.ToString());
             return;
         }
 
         try
         {
-            result = await _run.Completion.ConfigureAwait(true);
+            var result = await _run.Completion.ConfigureAwait(true);
+            EndRun();
+            await ShowAsync(result, isRepair, failedHeading).ConfigureAwait(true);
         }
         catch (Exception failure)
         {
-            Fail(repairing ? "Não foi possível reparar" : "Não foi possível verificar",
-                new Banner(BannerKind.Error, "O motor terminou, mas o resultado não pôde ser lido.", Detail: null),
-                failure.ToString());
-            return;
+            // Never leave the screen stuck on "Verificando": whatever failed is shown, with its details.
+            EndRun();
+            Fail(failedHeading, new Banner(BannerKind.Error, "O motor terminou, mas o resultado não pôde ser lido.", Detail: null), failure.ToString());
         }
-        finally
-        {
-            _run.Dispose();
-            _run = null;
-            IsPaused = false;
-        }
-
-        await ShowAsync(result, repairing).ConfigureAwait(true);
     }
 
-    private async Task ShowAsync(EngineResult result, bool repaired)
+    private void EndRun()
+    {
+        _run?.Dispose();
+        _run = null;
+        IsPaused = false;
+    }
+
+    private async Task ShowAsync(EngineResult result, bool isRepair, string failedHeading)
     {
         switch (result.Outcome)
         {
             case EngineOutcome.Canceled:
                 Stage = VerifyStage.Canceled;
-                Heading = repaired ? "Reparo cancelado" : "Verificação cancelada";
+                Heading = isRepair ? "Reparo cancelado" : "Verificação cancelada";
+
+                // The engine may have fixed some files before it stopped, so the earlier result no longer holds.
+                Banner = isRepair ? new Banner(BannerKind.Warning, "O reparo foi interrompido.", VerifyAgain) : null;
                 ShowFiles(null);
                 return;
 
             case EngineOutcome.Error:
-                Fail(repaired ? "Não foi possível reparar" : "Não foi possível verificar",
+                Fail(failedHeading,
                     new Banner(BannerKind.Error, "O arquivo de recuperação não pôde ser lido.", "Confira se ele existe e se o disco está acessível."),
                     result.Output);
                 return;
@@ -222,42 +229,49 @@ public sealed class VerifyScreen : Observable, IDisposable
 
         // Error and Canceled are the only outcomes without a report (EngineRun).
         var report = result.Report ?? throw new InvalidOperationException($"No report for outcome {result.Outcome}.");
-        var lastWritten = _lastWritten;
-        var files = await Task.Run(() => FilesOf(report, lastWritten, repaired && result.Outcome == EngineOutcome.Completed)).ConfigureAwait(true);
         var problems = report.SourceFiles.Count - report.CompleteFiles.Count;
 
-        switch (repaired, result.Outcome)
+        if (isRepair && result.Outcome != EngineOutcome.Completed)
         {
-            case (false, EngineOutcome.Completed) or (true, EngineOutcome.Completed) when problems == 0:
-                Stage = repaired ? VerifyStage.Repaired : VerifyStage.Verified;
-                Heading = repaired ? "Reparo concluído" : "Verificação concluída";
-                Banner = new Banner(BannerKind.Success, AllComplete(report.SourceFiles.Count), result.RecoveryFilesIncomplete ? "Um dos arquivos de recuperação está danificado ou faltando." : null);
-                break;
+            // The report is the state before the repair, and the engine may have fixed some files before it
+            // failed: showing that list would mislead, so the screen asks for a new verification instead.
+            Stage = VerifyStage.Failed;
+            Heading = "O reparo falhou";
+            Banner = new Banner(BannerKind.Error, "Não foi possível consertar todos os arquivos.", BlocksLacking(report.RecoveryBlocks) is { } lacking ? lacking + " " + VerifyAgain : VerifyAgain);
+            Details = result.Output;
+            ShowFiles(null);
+            return;
+        }
 
-            case (false, EngineOutcome.RepairPossible):
-                Stage = VerifyStage.Verified;
-                Heading = "Verificação concluída";
-                Banner = new Banner(BannerKind.Warning, WithProblem(problems) + " O reparo é possível.", BlocksNeeded(report.RecoveryBlocks));
-                CanRepair = true;
-                break;
+        var allFixed = isRepair && problems > 0;
+        var lastWritten = _lastWritten;
+        var files = await Task.Run(() => FilesOf(report, lastWritten, allFixed)).ConfigureAwait(true);
 
-            case (false, _):
-                Stage = VerifyStage.Verified;
-                Heading = "Verificação concluída";
-                Banner = new Banner(BannerKind.Error, WithProblem(problems) + " O reparo não é possível.", BlocksLacking(report.RecoveryBlocks));
-                break;
-
-            case (true, EngineOutcome.Completed):
+        switch (result.Outcome)
+        {
+            case EngineOutcome.Completed when allFixed:
                 Stage = VerifyStage.Repaired;
                 Heading = "Reparo concluído";
                 Banner = new Banner(BannerKind.Success, Count(problems, "arquivo consertado.", "arquivos consertados."), Recycled(report.DamagedFiles.Count + report.AppendedFiles.Count));
                 break;
 
+            case EngineOutcome.Completed:
+                Stage = isRepair ? VerifyStage.Repaired : VerifyStage.Verified;
+                Heading = isRepair ? "Reparo concluído" : "Verificação concluída";
+                Banner = new Banner(BannerKind.Success, AllComplete(report.SourceFiles.Count), result.RecoveryFilesIncomplete ? "Um dos arquivos de recuperação está danificado ou faltando." : null);
+                break;
+
+            case EngineOutcome.RepairPossible:
+                Stage = VerifyStage.Verified;
+                Heading = "Verificação concluída";
+                Banner = new Banner(BannerKind.Warning, WithProblem(problems) + " O reparo é possível.", BlocksNeeded(report));
+                CanRepair = true;
+                break;
+
             default:
-                Stage = VerifyStage.Failed;
-                Heading = "O reparo falhou";
-                Banner = new Banner(BannerKind.Error, "Não foi possível consertar todos os arquivos.", BlocksLacking(report.RecoveryBlocks));
-                Details = result.Output;
+                Stage = VerifyStage.Verified;
+                Heading = "Verificação concluída";
+                Banner = new Banner(BannerKind.Error, WithProblem(problems) + " O reparo não é possível.", BlocksLacking(report.RecoveryBlocks));
                 break;
         }
 
@@ -284,7 +298,7 @@ public sealed class VerifyScreen : Observable, IDisposable
     private sealed record Files(FileCounts Counts, IReadOnlyList<ProblemFile> Problems, IReadOnlyList<CompleteFile> Complete, string CompleteSummary);
 
     /// <summary>Reads the dates from disk, so run it off the screen's thread.</summary>
-    private static Files FilesOf(VerificationReport report, Func<string, DateTime?> lastWritten, bool repaired)
+    private static Files FilesOf(VerificationReport report, Func<string, DateTime?> lastWritten, bool allFixed)
     {
         string NameOf(string file) => Path.GetRelativePath(report.BaseDirectory, file);
         long? SizeOf(string file) => report.FileSizes.TryGetValue(file, out var size) ? size : null;
@@ -308,7 +322,7 @@ public sealed class VerifyScreen : Observable, IDisposable
         IEnumerable<string> ByName(IEnumerable<string> files) => files.Order(StringComparer.CurrentCultureIgnoreCase);
 
         ProblemFile Problem(string file, ProblemKind kind, string tag, string? image) =>
-            repaired
+            allFixed
                 ? new ProblemFile(NameOf(file), ProblemKind.Repaired, "Reparado", file, Meta(file, file))
                 : new ProblemFile(NameOf(file), kind, tag, image, Meta(file, image));
 
@@ -329,7 +343,7 @@ public sealed class VerifyScreen : Observable, IDisposable
                     lastWritten(file) is { } date ? DateText(date) : "")),
         ];
 
-        var counts = repaired
+        var counts = allFixed
             ? new FileCounts(report.SourceFiles.Count, Damaged: 0, Missing: 0, Misnamed: 0)
             : new FileCounts(report.CompleteFiles.Count, report.DamagedFiles.Count + report.AppendedFiles.Count, report.MissingFiles.Count, report.MisnamedFiles.Count);
 
@@ -351,11 +365,15 @@ public sealed class VerifyScreen : Observable, IDisposable
 
     private static string WithProblem(int files) => Count(files, "arquivo com problema.", "arquivos com problema.");
 
-    private static string? BlocksNeeded(RecoveryBlocks? blocks) => blocks switch
+    private static string? BlocksNeeded(VerificationReport report) => report.RecoveryBlocks switch
     {
         null => null,
-        { Needed: 0 } => "Basta devolver os nomes originais; nenhum bloco de recuperação é usado.",
-        _ => $"Precisa de {blocks.Needed} dos {blocks.Available} blocos de recuperação disponíveis.",
+
+        // Nothing lost: the files are only misnamed, or only need trimming, or their parts were found elsewhere.
+        { Needed: 0 } when report.MisnamedFiles.Count == report.SourceFiles.Count - report.CompleteFiles.Count =>
+            "Basta devolver os nomes originais; nenhum bloco de recuperação é usado.",
+        { Needed: 0 } => "Nenhum bloco de recuperação é usado.",
+        var blocks => $"Precisa de {blocks.Needed} dos {blocks.Available} blocos de recuperação disponíveis.",
     };
 
     private static string? BlocksLacking(RecoveryBlocks? blocks) => blocks is { Lacking: > 0 }
@@ -370,9 +388,11 @@ public sealed class VerifyScreen : Observable, IDisposable
         _ => "As versões danificadas foram para a Lixeira.",
     };
 
+    private const string VerifyAgain = "Verifique de novo para ver como os arquivos ficaram.";
+
     private static string Count(int count, string singular, string plural) => count == 1 ? "1 " + singular : $"{count} {plural}";
 
-    private static string DateText(DateTime date) => date.ToString("d", PtBr);
+    private static string DateText(DateTime date) => date.ToString("d", PtBrazil.Culture);
 
     private static DateTime? LastWrittenOnDisk(string file)
     {

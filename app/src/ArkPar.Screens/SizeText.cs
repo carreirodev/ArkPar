@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-using System.Globalization;
-
 namespace ArkPar.Screens;
 
 /// <summary>File sizes as the screens show them: "6,2 MB", "182 MB", never in bytes.</summary>
 public static class SizeText
 {
-    private static readonly CultureInfo PtBr = CultureInfo.GetCultureInfo("pt-BR");
     private static readonly string[] Units = ["KB", "MB", "GB", "TB"];
 
     /// <summary>Like Windows Explorer, in units of 1024: one decimal below 10, none from 10 up.</summary>
@@ -28,7 +25,7 @@ public static class SizeText
             var shown = Math.Round(value, value < 10 ? 1 : 0, MidpointRounding.AwayFromZero);
             if (shown < 1024 || unit == Units.Length - 1)
             {
-                return shown.ToString(shown < 10 ? "0.0" : "0", PtBr) + " " + Units[unit];
+                return shown.ToString(shown < 10 ? "0.0" : "0", PtBrazil.Culture) + " " + Units[unit];
             }
 
             value /= 1024;

@@ -91,12 +91,6 @@ public sealed class EngineRun : IEngineRun
         }
     }
 
-    /// <summary>Pauses the task. Does nothing if it is already paused, canceled or finished.</summary>
-    public void Pause() => SetPaused(true);
-
-    /// <summary>Resumes a paused task.</summary>
-    public void Resume() => SetPaused(false);
-
     /// <summary>
     /// Asks the engine to stop. If it has not stopped after a few seconds (it was in a step that does not
     /// check keys), it is ended at once. Either way the result is <see cref="EngineOutcome.Canceled"/>,

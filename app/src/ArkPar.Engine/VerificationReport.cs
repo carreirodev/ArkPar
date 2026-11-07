@@ -8,7 +8,8 @@ namespace ArkPar.Engine;
 
 /// <summary>
 /// The state of each photo of a recovery set, as the engine found it while verifying or before
-/// repairing (the <c>/w</c> JSON file; format in source/par2j/json.c). Every path is a full Windows path.
+/// repairing: the <c>/w</c> JSON file (format in source/par2j/json.c), plus the sizes and recovery
+/// block counts only its printed output has. Every path is a full Windows path.
 /// </summary>
 public sealed partial class VerificationReport
 {

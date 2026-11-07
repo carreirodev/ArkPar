@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-using System.ComponentModel;
-using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using ArkPar.App.Native;
 using ArkPar.Screens;
@@ -64,11 +62,11 @@ public sealed partial class ProblemCard : UserControl
         {
             pixels = await Task.Run(() => ShellThumbnail.Get(path, ThumbnailSize)).ConfigureAwait(true);
         }
-        catch (Exception failure) when (failure is COMException or Win32Exception or FileNotFoundException or UnauthorizedAccessException)
+        catch (Exception failure)
         {
             // No thumbnail: a file type without one, a damaged photo the decoder rejects, a file just removed.
-            // The card says so, and the reason is in its tooltip.
-            if (File == file)
+            // The card says so, and the reason is in its tooltip; the card has nothing better to do with it.
+            if (ReferenceEquals(File, file))
             {
                 PlaceholderText.Text = "sem miniatura";
                 ToolTipService.SetToolTip(Placeholder, failure.Message);
@@ -78,7 +76,7 @@ public sealed partial class ProblemCard : UserControl
         }
 
         // The card may have been given another file (a new result) while this one loaded.
-        if (File != file)
+        if (!ReferenceEquals(File, file))
         {
             return;
         }

@@ -46,7 +46,7 @@
                 </StackPanel>
 
                 <!-- Choosing a file: shown whenever nothing is running. -->
-                <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.Not(Screen.IsRunning), Mode=OneWay}">
+                <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleUnless(Screen.IsRunning), Mode=OneWay}">
                     <Button Content="Abrir arquivo .par2…" Click="OnChooseFile" Style="{StaticResource AccentButtonStyle}" />
                     <Button
                         Content="Verificar de novo"
@@ -138,7 +138,7 @@
                 <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfItems(Screen.CompleteFiles), Mode=OneWay}">
                     <StackPanel>
                         <Grid Padding="0,0,0,6">
-                            <TextBlock Text="Íntegros" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                            <TextBlock Text="{x:Bind Screen.CompleteHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                             <TextBlock Text="{x:Bind Screen.CompleteSummary, Mode=OneWay}" Style="{StaticResource StatLabel}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
                         </Grid>
                         <ItemsRepeater ItemsSource="{x:Bind Screen.CompleteFiles, Mode=OneWay}">

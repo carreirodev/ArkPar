@@ -191,6 +191,7 @@ public sealed class VerifyScreenTests : IDisposable
         Assert.AreEqual(VerifyStage.Repaired, _screen.Stage);
         Assert.AreEqual("Reparo concluído", _screen.Heading);
         Assert.AreEqual("Reparados", _screen.ProblemsHeading);
+        Assert.AreEqual("Já estavam íntegros", _screen.CompleteHeading);
         Assert.AreEqual(new Banner(BannerKind.Success, "3 arquivos consertados.", "A versão danificada foi para a Lixeira."), _screen.Banner);
         Assert.AreEqual(new FileCounts(Complete: 3, Damaged: 0, Missing: 0, Misnamed: 0), _screen.Counts);
         CollectionAssert.AreEqual(
@@ -214,8 +215,55 @@ public sealed class VerifyScreenTests : IDisposable
 
         Assert.AreEqual(VerifyStage.Failed, _screen.Stage);
         Assert.AreEqual("O reparo falhou", _screen.Heading);
-        Assert.AreEqual(BannerKind.Error, _screen.Banner?.Kind);
-        Assert.AreEqual("Não foi possível consertar todos os arquivos.", _screen.Banner?.Title);
+        Assert.AreEqual(new Banner(BannerKind.Error, "Não foi possível consertar todos os arquivos.", "Verifique de novo para ver como os arquivos ficaram."), _screen.Banner);
+
+        // The list from before the repair may no longer be true: some files may have been fixed.
+        Assert.IsNull(_screen.Counts);
+        Assert.IsEmpty(_screen.ProblemFiles);
+        Assert.IsFalse(_screen.CanRepair);
+    }
+
+    [TestMethod]
+    public async Task CanceledRepairAsksForANewVerification()
+    {
+        await VerifyAsync(FakeEngine.Result(EngineOutcome.RepairPossible, 164, "verify-damaged"));
+        var repairing = _screen.RepairAsync();
+
+        _screen.Cancel();
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, Report: null, "Cancel"));
+        await repairing;
+
+        Assert.AreEqual(VerifyStage.Canceled, _screen.Stage);
+        Assert.AreEqual("Reparo cancelado", _screen.Heading);
+        Assert.AreEqual(new Banner(BannerKind.Warning, "O reparo foi interrompido.", "Verifique de novo para ver como os arquivos ficaram."), _screen.Banner);
+        Assert.IsNull(_screen.Counts);
+    }
+
+    [TestMethod]
+    public async Task RepairThatNeedsNoRecoveryBlocksSaysSo()
+    {
+        // A partial copy of the missing photo holds all of its parts, so no recovery block is used
+        // (verify-found.json, with the counts the engine would print).
+        var output = "Recovery Slice found\t: 120\r\nInput File Slice lost\t: 0\r\n";
+        var report = VerificationReport.Load(Engine.Fixture.PathOf("verify-found.json"), output);
+
+        await VerifyAsync(new EngineResult(EngineOutcome.RepairPossible, 132, report, output));
+
+        Assert.AreEqual("Nenhum bloco de recuperação é usado.", _screen.Banner?.Detail);
+    }
+
+    [TestMethod]
+    public async Task ResultThatCannotBeShownEndsTheTaskInsteadOfHanging()
+    {
+        var verifying = _screen.VerifyAsync(RecoveryFile);
+
+        // RepairPossible always comes with a report; one without it cannot be shown.
+        _engine.Last.Finish(new EngineResult(EngineOutcome.RepairPossible, 132, Report: null, ""));
+        await verifying;
+
+        Assert.AreEqual(VerifyStage.Failed, _screen.Stage);
+        Assert.IsFalse(_screen.IsRunning);
+        Assert.AreEqual("O motor terminou, mas o resultado não pôde ser lido.", _screen.Banner?.Title);
     }
 
     [TestMethod]

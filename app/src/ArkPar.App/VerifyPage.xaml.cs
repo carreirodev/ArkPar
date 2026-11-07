@@ -23,6 +23,7 @@ public sealed partial class VerifyPage : UserControl
     /// <summary>The window the file picker opens over.</summary>
     public void Attach(WindowId window) => _window = window;
 
+    // VerifyAsync shows every failure on the screen itself, so nothing is lost by not awaiting it.
     public void Open(string recoveryFile) => _ = Screen.VerifyAsync(recoveryFile);
 
     /// <summary>Ends the engine if it is still running.</summary>

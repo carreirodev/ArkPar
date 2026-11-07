@@ -22,9 +22,12 @@ Como abrir
 3. Abra a pasta ArkPar e dê dois cliques em ArkPar.exe (o Windows pode
    mostrar o nome só como "ArkPar").
 
-4. Na primeira vez, o Windows pode avisar "O Windows protegeu o
-   computador". O aviso aparece porque o ArkPar não é assinado digitalmente.
-   Clique em "Mais informações" e depois em "Executar assim mesmo".
+4. Na primeira vez, o Windows pode mostrar um aviso, porque o ArkPar não é
+   assinado digitalmente:
+   - "Abrir Arquivo - Aviso de Segurança", com "O fornecedor não pôde ser
+     verificado": clique em "Executar".
+   - "O Windows protegeu o computador": clique em "Mais informações" e
+     depois em "Executar assim mesmo".
 
 Para abrir de novo depois, repita o passo 3. Para ter um atalho, clique em
 ArkPar.exe com o botão direito e escolha "Mostrar mais opções" >

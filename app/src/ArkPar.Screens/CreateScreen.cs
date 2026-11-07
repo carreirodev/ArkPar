@@ -59,6 +59,7 @@ public sealed class CreateScreen : Observable, IDisposable
     private readonly Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> _runTrial;
     private readonly Action<IReadOnlyList<string>> _recycle;
     private readonly Func<string, bool> _hasRecycleBin;
+    private readonly SetReview _review;
     private IEngineRun? _run;
     private SetCreation? _creating;
     private int _runNumber;
@@ -82,11 +83,12 @@ public sealed class CreateScreen : Observable, IDisposable
     private int? _recoveryFileCount;
     private Choice _memory;
     private CreationEstimate? _estimate;
+
+    // The engine's estimate of each planned set, in the plan's order; Estimate covers the ones included.
+    private RecoveryEstimate[]? _setEstimates;
     private bool _isEstimating;
     private int _estimatedSets;
     private string? _estimateProblem;
-    private int _existingSets;
-    private bool _existingSetsUnknown;
     private string _heading = "Criar";
     private string? _setProgressText;
     private string _activityText = "";
@@ -97,11 +99,13 @@ public sealed class CreateScreen : Observable, IDisposable
 
     /// <param name="startEngine">Starts an engine task (<see cref="EngineRun.Start"/> in the app).</param>
     /// <param name="runTrial">Runs the engine's trial of a create (<see cref="EngineTrial.RunAsync"/> in the app).</param>
+    /// <param name="listSet">Lists the files a set on disk protects (<see cref="EngineListing.RunAsync"/> in the app).</param>
     /// <param name="recycle">Sends files to the Recycle Bin.</param>
     /// <param name="hasRecycleBin">Whether a folder's drive has a Recycle Bin; by default, only fixed disks do.</param>
     public CreateScreen(
         Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> startEngine,
         Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> runTrial,
+        Func<string, CancellationToken, Task<SetListing>> listSet,
         Action<IReadOnlyList<string>> recycle,
         Func<string, bool>? hasRecycleBin = null)
     {
@@ -111,6 +115,8 @@ public sealed class CreateScreen : Observable, IDisposable
         _hasRecycleBin = hasRecycleBin ?? DriveHasRecycleBin;
         _blockSize = BlockSizes[0];
         _memory = MemoryLimits[0];
+        _review = new SetReview(listSet);
+        _review.PropertyChanged += OnReviewChanged;
     }
 
     /// <summary>
@@ -237,45 +243,67 @@ public sealed class CreateScreen : Observable, IDisposable
 
             Announce(nameof(Sets));
             Announce(nameof(HasSets));
-            Announce(nameof(SetsTitle));
             Announce(nameof(SelectionProblem));
             Announce(nameof(SaveIn));
             Announce(nameof(Destination));
             Announce(nameof(EstimatingText));
-            Announce(nameof(CreateText));
-            Announce(nameof(ReplaceWarning));
             Announce(nameof(ParFilesWarning));
-            Announce(nameof(CanCreate));
+            _setEstimates = null;
             Estimate = null;
             EstimateProblem = null;
-            CheckForExistingSets();
+            _review.Start(value.Sets);
             RequestEstimate();
         }
     }
 
-    /// <summary>The sets the create will make, each with where it goes.</summary>
+    /// <summary>The sets the mode splits what was chosen into, each with where it goes.</summary>
     public IReadOnlyList<PlannedSet> Sets => Plan.Sets;
 
     public bool HasSets => Sets.Count > 0;
 
-    /// <summary>How many sets the create will make, e.g. "12 conjuntos serão criados".</summary>
-    public string SetsTitle => Sets.Count == 1 ? "1 conjunto será criado" : PtBrazil.Count(Sets.Count, "conjunto", "conjuntos") + " serão criados";
+    /// <summary>
+    /// One line for each of <see cref="Sets"/>: what is in its folder now, and whether the create makes it. A set
+    /// up to date starts left out.
+    /// </summary>
+    public IReadOnlyList<ReviewedSet> Items => _review.Items;
+
+    /// <summary>The sets the create will make: the ones included.</summary>
+    public IReadOnlyList<PlannedSet> Included => _review.Included;
+
+    /// <summary>The engine is listing the sets already in the folders, to compare them.</summary>
+    public bool IsReviewing => _review.IsComparing;
+
+    /// <summary>How far that is, e.g. "Conferindo os conjuntos que já existem… 3 de 12".</summary>
+    public string ReviewingText => _review.ComparingText;
+
+    /// <summary>How many sets the create will make, e.g. "12 conjuntos serão criados", or "2 de 12 conjuntos serão criados".</summary>
+    public string SetsTitle => (Included.Count, Sets.Count) switch
+    {
+        (1, 1) => "1 conjunto será criado",
+        (0, _) => "Nenhum conjunto será criado",
+        var (included, all) when included == all => PtBrazil.Count(all, "conjunto", "conjuntos") + " serão criados",
+        (1, var all) => $"1 de {all.ToString("N0", PtBrazil.Culture)} conjuntos será criado",
+        var (included, all) => $"{included.ToString("N0", PtBrazil.Culture)} de {all.ToString("N0", PtBrazil.Culture)} conjuntos serão criados",
+    };
 
     /// <summary>Where the recovery files will go: the single set's index file, or how many sets from which folder.</summary>
-    public string? Destination => Sets switch
+    public string? Destination => ShownSets switch
     {
         [] => null,
         [var only] => only.RecoveryFile,
-        _ => $"{PtBrazil.Count(Sets.Count, "conjunto", "conjuntos")} em {Selection.BaseDirectory}",
+        var sets => $"{PtBrazil.Count(sets.Count, "conjunto", "conjuntos")} em {Selection.BaseDirectory}",
     };
 
     /// <summary>The folder the recovery files go in, by name, or how many folders they go in.</summary>
-    public string SaveIn => Sets.Select(set => set.BaseDirectory).Distinct(StringComparer.OrdinalIgnoreCase).ToList() switch
+    public string SaveIn => ShownSets.Select(set => set.BaseDirectory).Distinct(StringComparer.OrdinalIgnoreCase).ToList() switch
     {
         [] => "",
         [var folder] => Selection.FolderName(folder),
         var folders => PtBrazil.Count(folders.Count, "pasta", "pastas"),
     };
+
+    // Where the header and the facts point: the sets included, or, with none included, every set.
+    private IReadOnlyList<PlannedSet> ShownSets => Included is { Count: > 0 } included ? included : Sets;
 
     /// <summary>The redundancy, in whole percent, from <see cref="MinRedundancy"/> to <see cref="MaxRedundancy"/>.</summary>
     public int Redundancy
@@ -416,53 +444,38 @@ public sealed class CreateScreen : Observable, IDisposable
         ? $"Vão aparecer {PtBrazil.Count(estimate.Par2Files, "arquivo .par2", "arquivos .par2")} nas pastas, ao lado dos arquivos protegidos."
         : null;
 
-    /// <summary>How many of the sets are already in their folders, so creating replaces them, their files going to the Recycle Bin.</summary>
-    public int ExistingSets
-    {
-        get => _existingSets;
-        private set
-        {
-            if (Set(ref _existingSets, value))
-            {
-                Announce(nameof(ReplacesExisting));
-                Announce(nameof(CreateText));
-                Announce(nameof(ReplaceWarning));
-            }
-        }
-    }
+    /// <summary>How many of the sets included are already in their folders, so creating replaces them.</summary>
+    public int ReplacedSets => Items.Count(item => item.IsIncluded && item.Comparison.Replaces);
 
-    public bool ReplacesExisting => ExistingSets > 0;
+    public bool ReplacesExisting => ReplacedSets > 0;
 
-    public string CreateText => ReplacesExisting && ExistingSets == Sets.Count ? "Substituir arquivos de recuperação" : "Criar arquivos de recuperação";
+    public string CreateText => ReplacesExisting && ReplacedSets == Included.Count ? "Substituir arquivos de recuperação" : "Criar arquivos de recuperação";
 
     /// <summary>What happens to the sets being replaced; null when there are none.</summary>
     public string? ReplaceWarning
     {
         get
         {
-            if (_existingSetsUnknown)
+            var (which, theyGo) = (ReplacedSets, Sets.Count) switch
             {
-                return "Não foi possível conferir se estes conjuntos já existem nas pastas; os que existirem serão substituídos.";
-            }
-
-            var (which, theirFiles, oneAside) = (ExistingSets, Sets.Count) switch
-            {
-                (0, _) => (null, "", ""),
-                (_, 1) => ("Já existe um conjunto com este nome nesta pasta.", "Os arquivos dele", "Ele fica"),
-                (1, _) => ("1 destes conjuntos já existe e será substituído.", "Os arquivos dele", "Ele fica"),
-                (var existing, _) => ($"{existing.ToString("N0", PtBrazil.Culture)} destes conjuntos já existem e serão substituídos.", "Os arquivos deles", "Cada um fica"),
+                (0, _) => (null, ""),
+                (_, 1) => ("Já existe um conjunto com este nome nesta pasta.", "Ele só sai da pasta"),
+                (1, _) => ("1 destes conjuntos já existe e será substituído.", "Ele só sai da pasta"),
+                (var replaced, _) => ($"{replaced.ToString("N0", PtBrazil.Culture)} destes conjuntos já existem e serão substituídos.", "Cada um só sai da pasta"),
             };
             return which is null
                 ? null
-                : which + " " + (HasRecycleBin
-                    ? theirFiles + " irão para a Lixeira."
-                    : oneAside + " guardado ao lado até o novo ficar pronto, e então é apagado, porque este disco não tem Lixeira.");
+                : $"{which} {theyGo} depois que o novo ficar pronto"
+                    + (HasRecycleBin ? ", e vai para a Lixeira." : ", e é apagado, porque este disco não tem Lixeira.");
         }
     }
 
-    /// <summary>Only once the engine has worked out the sizes of every set for the current settings, so what is shown is what is made.</summary>
+    /// <summary>
+    /// Only once every set is compared with its folder, and the engine has worked out the sizes of the ones
+    /// included for the current settings, so what is shown is what is made.
+    /// </summary>
     public bool CanCreate =>
-        CanChoose && SelectionProblem is null && Sets.Count > 0 && Estimate is not null && !IsEstimating;
+        CanChoose && SelectionProblem is null && Included.Count > 0 && Estimate is not null && !IsEstimating && !IsReviewing;
 
     /// <summary>Which set is being made, when there are several, e.g. "Conjunto 3 de 12: 07 - Viagem Bahia"; otherwise null.</summary>
     public string? SetProgressText { get => _setProgressText; private set => Set(ref _setProgressText, value); }
@@ -523,7 +536,8 @@ public sealed class CreateScreen : Observable, IDisposable
     /// <summary>What went wrong, in technical terms, when something failed; otherwise null.</summary>
     public string? Details
     {
-        get => _details;
+        // With why sets already in the folders could not be read, if any could not.
+        get => SetCreation.Join(_details, _review.Details);
         private set
         {
             Set(ref _details, value);
@@ -622,7 +636,7 @@ public sealed class CreateScreen : Observable, IDisposable
             throw new InvalidOperationException("Nothing to create.");
         }
 
-        var sets = Sets;
+        var sets = Included;
         var hasRecycleBin = HasRecycleBin;
         _cancelRequested = false;
         StopEstimate();
@@ -631,7 +645,7 @@ public sealed class CreateScreen : Observable, IDisposable
         Banner = null;
         Details = null;
 
-        var made = new List<SetResult>();
+        var made = new List<(PlannedSet Set, SetResult Result)>();
         for (var index = 0; index < sets.Count; index++)
         {
             var set = sets[index];
@@ -649,11 +663,11 @@ public sealed class CreateScreen : Observable, IDisposable
 
             if (result.End != SetEnd.Created)
             {
-                ShowStopped(sets, set, index, made, result);
+                ShowStopped(sets, set, index, made.Count, result);
                 return;
             }
 
-            made.Add(result);
+            made.Add((set, result));
         }
 
         ShowCreated(made);
@@ -691,10 +705,11 @@ public sealed class CreateScreen : Observable, IDisposable
     {
         _disposed = true;
         StopEstimate();
+        _review.Stop();
         _creating?.Kill();
     }
 
-    /// <summary>Makes one set: moves the set of the same name out of the way, then runs the engine.</summary>
+    /// <summary>Makes one set: the engine writes it under a draft name, which replaces the set of the same name once made.</summary>
     private async Task<SetResult> CreateSetAsync(PlannedSet set, bool hasRecycleBin)
     {
         var runNumber = ++_runNumber;
@@ -702,11 +717,11 @@ public sealed class CreateScreen : Observable, IDisposable
         _creating = creation;
         try
         {
-            IReadOnlyList<string> replaced;
+            bool replaces;
             try
             {
-                // Read here, one folder listing: without a set to replace, the engine starts at once.
-                replaced = SetCreation.Replaced(set);
+                // Read again here, one folder listing: what the end says about the set there must be true now.
+                replaces = SetCreation.Replaced(set).Count > 0;
             }
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
             {
@@ -717,13 +732,8 @@ public sealed class CreateScreen : Observable, IDisposable
                 };
             }
 
-            if (replaced.Count > 0)
-            {
-                ActivityText = hasRecycleBin ? "Levando o conjunto anterior para a Lixeira" : "Guardando o conjunto anterior";
-            }
-
             return await creation.CreateAsync(
-                replaced,
+                replaces,
                 mayStart: () => !_disposed && !_cancelRequested,
                 runChanged: run =>
                 {
@@ -737,6 +747,7 @@ public sealed class CreateScreen : Observable, IDisposable
                         ActivityText = "Preparando";
                     }
                 },
+                activityChanged: activity => ActivityText = activity,
                 new UiProgress<EngineProgress>(progress =>
                 {
                     // An update posted just before the task ended may arrive after it: ignore it then.
@@ -753,36 +764,40 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
-    private void ShowCreated(List<SetResult> made)
+    private void ShowCreated(List<(PlannedSet Set, SetResult Result)> made)
     {
         // The sets are made: nothing from here on may remove them, and a failure here only changes what is shown.
         Stage = CreateStage.Created;
         Heading = made.Count == 1 ? "Conjunto criado" : "Conjuntos criados";
         SetProgressText = null;
-        CheckForExistingSets();
+        _review.Start(Sets);
 
         var where = Selection.BaseDirectory;
-        var madeText = made.All(set => set.FilesSize is not null)
-            ? $"{PtBrazil.Count(made.Sum(set => set.FileCount), "arquivo", "arquivos")} · {SizeText.Of(made.Sum(set => set.FilesSize ?? 0))}, em {where}"
+        var results = made.Select(set => set.Result).ToList();
+        var madeText = results.All(result => result.FilesSize is not null)
+            ? $"{PtBrazil.Count(results.Sum(result => result.FileCount), "arquivo", "arquivos")} · {SizeText.Of(results.Sum(result => result.FilesSize ?? 0))}, em {where}"
             : $"Em {where}";
-        var notes = made.Select(set => set.Note).OfType<string>().Distinct().Aggregate((string?)null, (all, note) => SetCreation.Join(all, note, " "));
-        var protects = made.Count == 1 ? Selection.Summary : $"{Selection.Summary} em {PtBrazil.Count(made.Count, "conjunto", "conjuntos")}";
+        var notes = results.Select(result => result.Note).OfType<string>().Distinct().Aggregate((string?)null, (all, note) => SetCreation.Join(all, note, " "));
+
+        // What the sets made protect, which is less than what was chosen when some were left out.
+        var files = PtBrazil.Count(made.Sum(set => set.Set.Files.Count), "arquivo", "arquivos") + " · " + SizeText.Of(made.Sum(set => set.Set.TotalSize));
+        var protects = made.Count == 1 ? files : $"{files} em {PtBrazil.Count(made.Count, "conjunto", "conjuntos")}";
         Banner = new Banner(BannerKind.Success, $"Os arquivos de recuperação protegem {protects}.", SetCreation.Join(madeText, notes, " "));
-        Details = made.Select(set => set.Details).OfType<string>().Aggregate((string?)null, (all, details) => SetCreation.Join(all, details));
+        Details = results.Select(result => result.Details).OfType<string>().Aggregate((string?)null, (all, details) => SetCreation.Join(all, details));
     }
 
-    /// <summary>Shows a create that stopped at <paramref name="set"/>, canceled or failed, the sets before it made.</summary>
-    private void ShowStopped(IReadOnlyList<PlannedSet> sets, PlannedSet set, int index, List<SetResult> made, SetResult result)
+    /// <summary>Shows a create that stopped at <paramref name="set"/>, canceled or failed, the <paramref name="made"/> sets before it made.</summary>
+    private void ShowStopped(IReadOnlyList<PlannedSet> sets, PlannedSet set, int index, int made, SetResult result)
     {
         SetProgressText = null;
-        CheckForExistingSets();
+        _review.Start(Sets);
         if (result.End == SetEnd.Canceled)
         {
             Stage = CreateStage.Canceled;
             Heading = "Criação cancelada";
-            var title = made.Count == 0
+            var title = made == 0
                 ? "Nenhum arquivo de recuperação foi gravado."
-                : $"{made.Count.ToString("N0", PtBrazil.Culture)} de {PtBrazil.Count(sets.Count, "conjunto", "conjuntos")} {(made.Count == 1 ? "ficou pronto" : "ficaram prontos")}; a criação foi cancelada.";
+                : $"{made.ToString("N0", PtBrazil.Culture)} de {PtBrazil.Count(sets.Count, "conjunto", "conjuntos")} {(made == 1 ? "ficou pronto" : "ficaram prontos")}; a criação foi cancelada.";
             Banner = new Banner(BannerKind.Warning, title, result.Note);
         }
         else
@@ -792,7 +807,7 @@ public sealed class CreateScreen : Observable, IDisposable
             var where = sets.Count == 1
                 ? null
                 : $"Parou no conjunto \"{set.Name}\" ({(index + 1).ToString("N0", PtBrazil.Culture)} de {sets.Count.ToString("N0", PtBrazil.Culture)}); "
-                    + made.Count switch
+                    + made switch
                     {
                         0 => "nenhum ficou pronto.",
                         1 => "1 ficou pronto.",
@@ -805,33 +820,49 @@ public sealed class CreateScreen : Observable, IDisposable
         RequestEstimate();
     }
 
-    /// <summary>How many of the sets are in their folders now, so Criar would replace them.</summary>
-    private void CheckForExistingSets()
+    private void OnReviewChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        int existing;
-        try
+        switch (e.PropertyName)
         {
-            existing = Sets
-                .GroupBy(set => set.BaseDirectory, StringComparer.OrdinalIgnoreCase)
-                .Sum(folder =>
-                {
-                    var names = Selection.SetNamesIn(folder.Key);
-                    return folder.Count(set => names.Contains(set.Name));
-                });
+            case nameof(SetReview.Items):
+                Announce(nameof(Items));
+                break;
+            case nameof(SetReview.Included):
+                Announce(nameof(Included));
+                Announce(nameof(SetsTitle));
+                Announce(nameof(Destination));
+                Announce(nameof(SaveIn));
+                Announce(nameof(ReplacedSets));
+                Announce(nameof(ReplacesExisting));
+                Announce(nameof(CreateText));
+                Announce(nameof(ReplaceWarning));
+                ShowEstimateOfIncluded();
+                Announce(nameof(CanCreate));
+                break;
+            case nameof(SetReview.IsComparing):
+                Announce(nameof(IsReviewing));
+                Announce(nameof(CanCreate));
+                break;
+            case nameof(SetReview.ComparingText):
+                Announce(nameof(ReviewingText));
+                break;
+            case nameof(SetReview.Details):
+                Announce(nameof(Details));
+                break;
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+    }
+
+    /// <summary>The estimate of the sets included, from the engine's estimate of every set; null while there is none or none is included.</summary>
+    private void ShowEstimateOfIncluded()
+    {
+        if (_setEstimates is not { } estimates || estimates.Length != Sets.Count)
         {
-            // A folder that cannot be listed now: the warning says it could not be checked, with the reason in Details.
-            _existingSetsUnknown = true;
-            ExistingSets = 0;
-            Announce(nameof(ReplaceWarning));
-            Details = failure.ToString();
+            Estimate = null;
             return;
         }
 
-        _existingSetsUnknown = false;
-        ExistingSets = existing;
-        Announce(nameof(ReplaceWarning));
+        var included = Items.Select((item, index) => (item.IsIncluded, Set: Sets[index], Estimate: estimates[index])).Where(set => set.IsIncluded).ToList();
+        Estimate = included.Count == 0 ? null : new CreationEstimate([.. included.Select(set => set.Set)], [.. included.Select(set => set.Estimate)]);
     }
 
     private EngineCommand.Create CommandFor(PlannedSet set) =>
@@ -881,7 +912,8 @@ public sealed class CreateScreen : Observable, IDisposable
                     if (number == _estimateNumber)
                     {
                         var clearDetails = _detailsFromEstimate;
-                        Estimate = new CreationEstimate(sets, estimates);
+                        _setEstimates = estimates;
+                        ShowEstimateOfIncluded();
                         EstimateProblem = null;
                         if (clearDetails)
                         {
@@ -899,6 +931,7 @@ public sealed class CreateScreen : Observable, IDisposable
                 {
                     if (number == _estimateNumber)
                     {
+                        _setEstimates = null;
                         Estimate = null;
                         EstimateProblem = "Não foi possível calcular o tamanho com estes ajustes.";
                         Details = failure is EngineTrialException trial ? trial.Output : failure.ToString();

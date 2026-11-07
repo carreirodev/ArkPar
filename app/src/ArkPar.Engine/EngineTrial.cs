@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-using System.Diagnostics;
-using System.Text;
-
 namespace ArkPar.Engine;
 
 /// <summary>
@@ -29,7 +26,7 @@ public static class EngineTrial
         {
             await File.WriteAllBytesAsync(Path.Combine(runDirectory, EngineArguments.SourceListName), EngineArguments.SourceList(create), cancellationToken)
                 .ConfigureAwait(false);
-            var (exitCode, output) = await RunEngineAsync(enginePath, EngineArguments.ForTrial(create, runDirectory), runDirectory, cancellationToken)
+            var (exitCode, output) = await PlainEngineProcess.RunAsync(enginePath, EngineArguments.ForTrial(create, runDirectory), runDirectory, cancellationToken)
                 .ConfigureAwait(false);
             if (exitCode != 0)
             {
@@ -48,38 +45,6 @@ public static class EngineTrial
         finally
         {
             Directory.Delete(runDirectory, recursive: true);
-        }
-    }
-
-    private static async Task<(int ExitCode, string Output)> RunEngineAsync(
-        string enginePath, IReadOnlyList<string> arguments, string runDirectory, CancellationToken cancellationToken)
-    {
-        var startInfo = new ProcessStartInfo(enginePath)
-        {
-            RedirectStandardOutput = true,
-            StandardOutputEncoding = Encoding.UTF8, // /uo
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WorkingDirectory = runDirectory,
-        };
-        foreach (var argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Could not start '{enginePath}'.");
-        try
-        {
-            var output = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            return (process.ExitCode, await output.ConfigureAwait(false));
-        }
-        catch (OperationCanceledException)
-        {
-            // The answer is no longer wanted (the settings changed): stop the engine, and wait so the run folder can go.
-            process.Kill();
-            await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-            throw;
         }
     }
 }

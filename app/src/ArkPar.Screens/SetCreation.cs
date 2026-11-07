@@ -15,7 +15,7 @@ internal enum SetEnd
 }
 
 /// <summary>How making one set ended, and what to tell the user about it.</summary>
-/// <param name="Note">What happened to the set it replaced, and to files left half written, in the user's words.</param>
+/// <param name="Note">What happened to the set it replaces, and to files left half written, in the user's words.</param>
 /// <param name="Details">What went wrong, in technical terms, if anything did.</param>
 internal sealed record SetResult(SetEnd End, string? Note, string? Details)
 {
@@ -33,9 +33,10 @@ internal sealed record SetResult(SetEnd End, string? Note, string? Details)
 }
 
 /// <summary>
-/// Makes one recovery set: moves the set of the same name out of the way (to the Recycle Bin, or aside on a
-/// drive without one), runs the engine, then removes what it left half written if it did not finish, and
-/// gives back or deletes the set it replaced. Every failure ends in a <see cref="SetResult"/>, not thrown.
+/// Makes one recovery set without putting the set of the same name at risk: the engine writes the new set under
+/// a draft name (<c>Viagem.arkpar-novo.par2</c>), and only once it is made does the set there go (to the Recycle
+/// Bin, or deleted on a drive without one) and the new one take its name. A create that fails, is canceled or is
+/// ended by the window closing removes only the draft. Every failure ends in a <see cref="SetResult"/>, not thrown.
 /// </summary>
 internal sealed class SetCreation(
     EngineCommand.Create create,
@@ -43,68 +44,67 @@ internal sealed class SetCreation(
     Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> startEngine,
     Action<IReadOnlyList<string>> recycle)
 {
-    /// <summary>Added to the names of a replaced set while it waits aside (on a drive without a Recycle Bin).</summary>
-    internal const string AsideSuffix = ".anterior";
+    /// <summary>Added to the set's name while the engine writes it: "Viagem" is written as "Viagem.arkpar-novo".</summary>
+    internal const string DraftSuffix = ".arkpar-novo";
 
     /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
-    // What this create did with the set it replaces: sent it to the Recycle Bin, or set it aside.
-    private bool _replacedToRecycleBin;
-    private List<(string Original, string Aside)>? _setAside;
+    private readonly EngineCommand.Create _draft =
+        new(DraftOf(create.RecoveryFile), create.BaseDirectory, create.SourceFiles, create.RedundancyPercent, create.Options);
     private IEngineRun? _run;
 
     /// <summary>The set's files already on disk, e.g. of a set of the same name made before: creating replaces them.</summary>
     public static IReadOnlyList<string> Replaced(PlannedSet set) => Selection.RecoverySetFiles(set.RecoveryFile);
 
-    /// <param name="replaced">The set this one replaces (<see cref="Replaced"/>), read just before.</param>
-    /// <param name="mayStart">Whether the engine may still start, once the replaced set is out of the way: not after Cancel, or once the window closed.</param>
+    /// <summary>The draft's index for <paramref name="recoveryFile"/>: "Viagem.arkpar-novo.par2" for "Viagem.par2".</summary>
+    internal static string DraftOf(string recoveryFile) =>
+        Path.Combine(Path.GetDirectoryName(recoveryFile) ?? "", Path.GetFileNameWithoutExtension(recoveryFile) + DraftSuffix + Selection.RecoveryExtension);
+
+    /// <param name="replaces">Whether a set of the same name is there (<see cref="Replaced"/>), read just before.</param>
+    /// <param name="mayStart">Whether the engine may still start: not after Cancel, or once the window closed.</param>
     /// <param name="runChanged">The engine task under way, once started, and null once it ended.</param>
+    /// <param name="activityChanged">What is being done once the engine has ended, in the user's words.</param>
     /// <param name="progress">The engine's progress.</param>
     public async Task<SetResult> CreateAsync(
-        IReadOnlyList<string> replaced, Func<bool> mayStart, Action<IEngineRun?> runChanged, IProgress<EngineProgress> progress)
+        bool replaces, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
     {
+        // Said whenever the set is not made: the set there was never touched.
+        var keptNote = replaces ? "O conjunto anterior continua na pasta." : null;
         IEngineRun run;
         try
         {
-            // The engine would write over the index but leave the replaced set's recovery files beside the new ones.
-            if (replaced.Count > 0 && hasRecycleBin)
+            // A draft already there was left by an earlier create: half written if the app closed hard, or whole if
+            // the set it replaced went but the rename did not, when it may be the only set of these files. Never
+            // removed here: the user checks it. One folder listing: without a draft, the engine starts at once.
+            if (Selection.RecoverySetFiles(_draft.RecoveryFile).Count > 0)
             {
-                await Task.Run(() => recycle(replaced)).ConfigureAwait(true);
-                _replacedToRecycleBin = true;
-            }
-            else if (replaced.Count > 0)
-            {
-                // No Recycle Bin on this drive: the set waits aside, so a create that does not finish loses nothing.
-                _setAside = await Task.Run(() => SetAside(replaced)).ConfigureAwait(true);
+                var draftFile = Path.GetFileName(_draft.RecoveryFile);
+                return new SetResult(SetEnd.Failed, keptNote, null)
+                {
+                    Title = $"Já existe na pasta um conjunto \"{draftFile}\", deixado por uma criação anterior.",
+                    Hint = $"Ele pode ser o único conjunto destes arquivos: confira-o em Verificar e reparar, e então apague-o ou tire \"{DraftSuffix}\" do nome dos arquivos dele.",
+                };
             }
 
             if (!mayStart())
             {
-                // Canceled, or the window closed, meanwhile: start nothing, and give the set back.
-                var (replacedNote, restoreFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-                return new SetResult(SetEnd.Canceled, replacedNote, restoreFailure);
+                return new SetResult(SetEnd.Canceled, keptNote, null);
             }
 
-            run = startEngine(create, progress);
+            run = startEngine(_draft, progress);
             _run = run;
             runChanged(run);
         }
         catch (Exception failure)
         {
-            var movingAway = replaced.Count > 0 && !_replacedToRecycleBin && _setAside is null;
-            var (note, settleFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-            return movingAway
-                ? new SetResult(SetEnd.Failed, note, Join(failure.ToString(), settleFailure))
-                {
-                    Title = "Não foi possível tirar o conjunto anterior da pasta.",
-                    Hint = "Confira se algum dos arquivos dele está aberto em outro programa.",
-                }
-                : new SetResult(SetEnd.Failed, note, Join(failure.ToString(), settleFailure))
-                {
-                    Title = "Não foi possível iniciar a criação.",
-                    Hint = "O ArkPar pode estar instalado de forma incompleta.",
-                };
+            return new SetResult(SetEnd.Failed, keptNote, failure.ToString())
+            {
+                Title = "Não foi possível iniciar a criação.",
+                Hint = failure is IOException or UnauthorizedAccessException
+                    ? "Confira se a pasta permite gravar."
+                    : "O ArkPar pode estar instalado de forma incompleta.",
+            };
         }
 
         EngineResult result;
@@ -117,20 +117,32 @@ internal sealed class SetCreation(
             // Never leave the screen stuck on "Criando": whatever failed is shown, with its details.
             EndRun(runChanged);
             var leftover = await RemovePartialFilesAsync().ConfigureAwait(true);
-            var (note, settleFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-            return new SetResult(SetEnd.Failed, Join(note, LeftoverText(leftover), " "), Join(Join(failure.ToString(), leftover), settleFailure))
+            return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(leftover), " "), Join(failure.ToString(), leftover))
             {
                 Title = "A criação terminou de forma inesperada.",
             };
         }
 
         EndRun(runChanged);
-        return await ResultOfAsync(result).ConfigureAwait(true);
+        if (result.Outcome == EngineOutcome.Completed)
+        {
+            return await TakeOverAsync(activityChanged).ConfigureAwait(true);
+        }
+
+        var partial = await RemovePartialFilesAsync().ConfigureAwait(true);
+        var notes = Join(keptNote, LeftoverText(partial), " ");
+        return result.Outcome == EngineOutcome.Canceled
+            ? new SetResult(SetEnd.Canceled, notes, partial)
+            : new SetResult(SetEnd.Failed, notes, Join(result.Output, partial))
+            {
+                Title = "O motor não conseguiu criar os arquivos de recuperação.",
+                Hint = "Confira se há espaço no disco e se a pasta permite gravar.",
+            };
     }
 
     /// <summary>
-    /// Ends the engine at once if it is still running, e.g. when the window closes, and removes the recovery
-    /// files it left half written: ended this way, the engine does not remove them itself.
+    /// Ends the engine at once if it is still running, e.g. when the window closes, and removes the draft it left
+    /// half written: ended this way, the engine does not remove it itself. The set there is never touched.
     /// </summary>
     public void Kill()
     {
@@ -145,9 +157,11 @@ internal sealed class SetCreation(
         if (run.Completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(KillWait))
         {
             DeletePartialFiles();
-            RestoreSetAside();
         }
     }
+
+    internal static string? Join(string? first, string? second, string separator = "\n\n") =>
+        first is null ? second : second is null ? first : first + separator + second;
 
     private void EndRun(Action<IEngineRun?> runChanged)
     {
@@ -156,123 +170,100 @@ internal sealed class SetCreation(
         runChanged(null);
     }
 
-    private async Task<SetResult> ResultOfAsync(EngineResult result)
+    /// <summary>The draft is a whole set: the set there goes, and the draft takes its name.</summary>
+    private async Task<SetResult> TakeOverAsync(Action<string> activityChanged)
     {
-        if (result.Outcome == EngineOutcome.Completed)
+        // From here on nothing removes the new set: a failure keeps it, under the draft's name if need be.
+        var draftFile = Path.GetFileName(_draft.RecoveryFile);
+        try
         {
-            // The set is made: nothing from here on may remove it, and a failure here only changes what is shown.
-            var (note, settleFailure) = await SettleReplacedSetAsync(created: true).ConfigureAwait(true);
-            try
+            var replaced = await Task.Run(() => Selection.RecoverySetFiles(create.RecoveryFile)).ConfigureAwait(true);
+            if (replaced.Count > 0)
             {
-                var recoveryFiles = Selection.RecoverySetFiles(create.RecoveryFile);
-                var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
-                return new SetResult(SetEnd.Created, note, settleFailure) { FileCount = recoveryFiles.Count, FilesSize = size };
-            }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-            {
-                // A recovery file moved or locked right after it was made (an antivirus...): the set is still there.
-                return new SetResult(SetEnd.Created, note, Join(failure.ToString(), settleFailure));
+                activityChanged(hasRecycleBin ? "Levando o conjunto anterior para a Lixeira" : "Apagando o conjunto anterior");
+                await Task.Run(() => RemoveReplaced(replaced)).ConfigureAwait(true);
             }
         }
-
-        var leftover = await RemovePartialFilesAsync().ConfigureAwait(true);
-        var (replacedNote, restoreFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
-        var notes = Join(replacedNote, LeftoverText(leftover), " ");
-        return result.Outcome == EngineOutcome.Canceled
-            ? new SetResult(SetEnd.Canceled, notes, Join(leftover, restoreFailure))
-            : new SetResult(SetEnd.Failed, notes, Join(Join(result.Output, leftover), restoreFailure))
+        catch (Exception failure)
+        {
+            // Shown with its details: a file of the set there held by another program, or its removal refused in Windows' dialog.
+            return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{draftFile}\".", failure.ToString())
             {
-                Title = "O motor não conseguiu criar os arquivos de recuperação.",
-                Hint = "Confira se há espaço no disco e se a pasta permite gravar.",
+                Title = "Não foi possível tirar o conjunto anterior da pasta.",
+                Hint = "Confira se algum dos arquivos dele está aberto em outro programa.",
             };
+        }
+
+        try
+        {
+            await Task.Run(RenameDraft).ConfigureAwait(true);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{draftFile}\"; tire \"{DraftSuffix}\" do nome para usá-lo.", failure.ToString())
+            {
+                Title = "Não foi possível dar o nome final ao novo conjunto.",
+                Hint = "Confira se algum arquivo .par2 da pasta está aberto em outro programa.",
+            };
+        }
+
+        try
+        {
+            var recoveryFiles = Selection.RecoverySetFiles(create.RecoveryFile);
+            var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
+            return new SetResult(SetEnd.Created, null, null) { FileCount = recoveryFiles.Count, FilesSize = size };
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            // A recovery file moved or locked right after it was made (an antivirus...): the set is still there.
+            return new SetResult(SetEnd.Created, null, failure.ToString());
+        }
+    }
+
+    private void RemoveReplaced(IReadOnlyList<string> replaced)
+    {
+        if (hasRecycleBin)
+        {
+            recycle(replaced);
+            return;
+        }
+
+        foreach (var file in replaced)
+        {
+            File.Delete(file);
+        }
     }
 
     /// <summary>
-    /// Ends what this create did with the set it replaced. Made: the set waiting aside is deleted. Not made: it is
-    /// given back, or, if it went to the Recycle Bin, the user is told it is there.
+    /// Gives the draft's files the set's name, its index last, so the set is never found half renamed. A rename
+    /// that fails puts back the ones already done, and the draft stays whole under its own name.
     /// </summary>
-    /// <returns>What to tell the user about that set, and why a step failed, if one did.</returns>
-    private async Task<(string? Note, string? Failure)> SettleReplacedSetAsync(bool created)
+    private void RenameDraft()
     {
-        if (_setAside is null)
-        {
-            return (_replacedToRecycleBin && !created ? "O conjunto anterior está na Lixeira, se quiser recuperá-lo." : null, null);
-        }
-
+        var draftName = Path.GetFileNameWithoutExtension(_draft.RecoveryFile);
+        var name = Path.GetFileNameWithoutExtension(create.RecoveryFile);
+        var renamed = new List<(string Draft, string Final)>();
         try
         {
-            await Task.Run(created ? DeleteSetAside : RestoreSetAside).ConfigureAwait(true);
-            return (created ? null : "O conjunto anterior continua na pasta.", null);
-        }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
-        {
-            // Said on screen: the set is still on disk, only under another name.
-            return (created
-                    ? $"O conjunto anterior ficou na pasta com \"{AsideSuffix}\" no fim do nome; pode apagá-lo."
-                    : $"O conjunto anterior ficou com \"{AsideSuffix}\" no fim do nome; tire esse final para usá-lo de novo.",
-                failure.ToString());
-        }
-    }
-
-    /// <summary>Renames <paramref name="files"/> aside, all or none: a move that fails puts back the ones already moved.</summary>
-    private static List<(string Original, string Aside)> SetAside(IReadOnlyList<string> files)
-    {
-        var moved = new List<(string Original, string Aside)>();
-        try
-        {
-            foreach (var file in files)
+            foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile).OrderBy(file => file.Equals(_draft.RecoveryFile, StringComparison.OrdinalIgnoreCase)))
             {
-                // Overwrites only what a create that never finished (the app closed hard) left aside before.
-                File.Move(file, file + AsideSuffix, overwrite: true);
-                moved.Add((file, file + AsideSuffix));
+                var final = Path.Combine(Path.GetDirectoryName(file) ?? "", name + Path.GetFileName(file)[draftName.Length..]);
+                File.Move(file, final);
+                renamed.Add((file, final));
             }
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            foreach (var (original, aside) in moved)
+            foreach (var (draft, final) in renamed)
             {
-                File.Move(aside, original);
+                File.Move(final, draft);
             }
 
             throw;
         }
-
-        return moved;
     }
 
-    /// <summary>Gives the set waiting aside its names back (the half-written new one is already gone).</summary>
-    private void RestoreSetAside()
-    {
-        if (_setAside is not { } aside)
-        {
-            return;
-        }
-
-        _setAside = null;
-        foreach (var (original, asideName) in aside)
-        {
-            File.Move(asideName, original);
-        }
-    }
-
-    private void DeleteSetAside()
-    {
-        if (_setAside is not { } aside)
-        {
-            return;
-        }
-
-        _setAside = null;
-        foreach (var (_, asideName) in aside)
-        {
-            File.Delete(asideName);
-        }
-    }
-
-    /// <summary>
-    /// Removes what a create that did not finish left behind. Every file of the set's name is from this run:
-    /// a set of that name it replaced was moved away before it started.
-    /// </summary>
+    /// <summary>Removes what a create that did not finish left behind: every file of the draft's name, and only those.</summary>
     /// <returns>Null when all went; otherwise why some could not, which the screen then shows.</returns>
     private async Task<string?> RemovePartialFilesAsync()
     {
@@ -290,7 +281,7 @@ internal sealed class SetCreation(
 
     private void DeletePartialFiles()
     {
-        foreach (var file in Selection.RecoverySetFiles(create.RecoveryFile))
+        foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile))
         {
             DeleteOnceReleased(file);
         }
@@ -319,8 +310,5 @@ internal sealed class SetCreation(
 
     private string? LeftoverText(string? leftover) => leftover is null
         ? null
-        : $"Arquivos incompletos ficaram na pasta; apague os que começam com \"{Path.GetFileNameWithoutExtension(create.RecoveryFile)}\" e terminam em .par2.";
-
-    internal static string? Join(string? first, string? second, string separator = "\n\n") =>
-        first is null ? second : second is null ? first : first + separator + second;
+        : $"Arquivos incompletos ficaram na pasta; apague os que começam com \"{Path.GetFileNameWithoutExtension(_draft.RecoveryFile)}\" e terminam em .par2.";
 }

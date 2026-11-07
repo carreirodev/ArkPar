@@ -127,7 +127,7 @@ public sealed partial class VerificationReport
     /// The "Input File list" the engine prints before verifying (par2.c), one
     /// <c>"      2000000     80 : "viagem\ônibus.jpg""</c> line per photo, up to "Input File total size".
     /// </summary>
-    private static Dictionary<string, long> FileSizesIn(string engineOutput, Func<string, string> fullPath)
+    internal static Dictionary<string, long> FileSizesIn(string engineOutput, Func<string, string> fullPath)
     {
         var sizes = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         var inList = false;
@@ -174,7 +174,7 @@ public sealed partial class VerificationReport
             : null;
 
     // Progress updates end with a bare CR, so a CR also ends a line here.
-    private static string[] Lines(string engineOutput) => engineOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+    internal static string[] Lines(string engineOutput) => engineOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
 
     // "%13I64d %6d : \"%s\"" in par2.c; a photo the engine could not name prints "?" instead.
     [GeneratedRegex(@"^ *(?<size>\d+) +\d+ : ""(?<name>.+)""$", RegexOptions.CultureInvariant)]
@@ -184,5 +184,5 @@ public sealed partial class VerificationReport
         element.GetString() ?? throw new JsonException($"A null name in '{property}'.");
 
     // The engine writes '/' instead of '\' so it never has to escape anything in its JSON.
-    private static string ToWindowsPath(string path) => path.Replace('/', '\\');
+    internal static string ToWindowsPath(string path) => path.Replace('/', '\\');
 }

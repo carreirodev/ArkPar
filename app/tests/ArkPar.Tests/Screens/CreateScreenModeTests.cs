@@ -17,6 +17,7 @@ public sealed class CreateScreenModeTests : IDisposable
 
     private readonly FakeEngine _engine = new();
     private readonly FakeTrial _trial = new();
+    private readonly FakeListing _listing = new();
     private readonly List<string> _recycled = [];
     private readonly string _root;
     private readonly string _trip;
@@ -31,7 +32,7 @@ public sealed class CreateScreenModeTests : IDisposable
         Directory.CreateDirectory(_beach);
         File.WriteAllBytes(Path.Combine(_trip, "IMG_4469.JPG"), new byte[2_000_000]);
         File.WriteAllBytes(Path.Combine(_beach, "IMG_4501.JPG"), new byte[4_000_000]);
-        _screen = new CreateScreen(_engine.Start, _trial.RunAsync, _recycled.AddRange);
+        _screen = new CreateScreen(_engine.Start, _trial.RunAsync, _listing.ListAsync, Recycle);
     }
 
     public void Dispose()
@@ -141,10 +142,10 @@ public sealed class CreateScreenModeTests : IDisposable
 
         Assert.AreEqual("Conjunto 1 de 2: 07 - Viagem Bahia", _screen.SetProgressText);
         var first = (EngineCommand.Create)_engine.Last.Command;
-        Assert.AreEqual(Path.Combine(_trip, "07 - Viagem Bahia.par2"), first.RecoveryFile);
+        Assert.AreEqual(Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2"), first.RecoveryFile, "Its draft.");
         Assert.AreEqual(_trip, first.BaseDirectory);
         Assert.AreEqual(Path.Combine(_trip, "IMG_4469.JPG"), first.SourceFiles.Single());
-        WriteSet(_trip, "07 - Viagem Bahia");
+        _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await WaitUntilAsync(() => _engine.Runs.Count == 2);
 
@@ -153,7 +154,7 @@ public sealed class CreateScreenModeTests : IDisposable
         Assert.AreEqual(_beach, second.BaseDirectory);
         Assert.AreEqual(first.Options, second.Options, "The Avançado settings hold for every set.");
         Assert.AreEqual(first.RedundancyPercent, second.RedundancyPercent);
-        WriteSet(_beach, "Praia do Forte");
+        _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await creating;
 
@@ -170,13 +171,14 @@ public sealed class CreateScreenModeTests : IDisposable
     {
         await ReadyAsync(CreationMode.PerFolder);
         var creating = _screen.CreateAsync();
-        WriteSet(_trip, "07 - Viagem Bahia");
+        _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await WaitUntilAsync(() => _engine.Runs.Count == 2);
 
+        _listing.Lists(Path.Combine(_trip, "07 - Viagem Bahia.par2"), Path.Combine(_trip, "IMG_4469.JPG"));
         _screen.Cancel();
         Assert.IsTrue(_engine.Last.CancelRequested);
-        WriteSet(_beach, "Praia do Forte");
+        _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, null, "Cancel"));
         await creating;
 
@@ -184,17 +186,23 @@ public sealed class CreateScreenModeTests : IDisposable
         Assert.AreEqual(new Banner(BannerKind.Warning, "1 de 2 conjuntos ficou pronto; a criação foi cancelada.", Detail: null), _screen.Banner);
         Assert.HasCount(2, Directory.GetFiles(_trip, "*.par2"), "The set made stays.");
         Assert.IsEmpty(Directory.GetFiles(_beach, "*.par2"), "The half-written one goes.");
-        Assert.AreEqual("1 destes conjuntos já existe e será substituído. Os arquivos dele irão para a Lixeira.", _screen.ReplaceWarning);
+        await WaitUntilAsync(() => !_screen.IsReviewing);
+        Assert.AreEqual("Pular · em dia; Criar · sem conjunto", string.Join("; ", _screen.Items.Select(item => item.StatusText)), "Running again makes only the one canceled.");
     }
 
     [TestMethod]
     public async Task CancelingBetweenTwoSetsStartsNoOther()
     {
-        File.WriteAllBytes(Path.Combine(_beach, "Praia do Forte.par2"), new byte[10]);
+        File.WriteAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.par2"), new byte[10]);
         using var recycling = new ManualResetEventSlim();
-        using var screen = new CreateScreen(_engine.Start, _trial.RunAsync, files => recycling.Wait(TimeSpan.FromSeconds(10)));
+        using var screen = new CreateScreen(_engine.Start, _trial.RunAsync, _listing.ListAsync, files =>
+        {
+            recycling.Wait(TimeSpan.FromSeconds(10));
+            Recycle(files);
+        });
         await ReadyAsync(CreationMode.PerFolder, screen);
         var creating = screen.CreateAsync();
+        _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await WaitUntilAsync(() => screen.ActivityText == "Levando o conjunto anterior para a Lixeira");
 
@@ -205,7 +213,7 @@ public sealed class CreateScreenModeTests : IDisposable
 
         Assert.HasCount(1, _engine.Runs);
         Assert.AreEqual(CreateStage.Canceled, screen.Stage);
-        Assert.AreEqual(new Banner(BannerKind.Warning, "1 de 2 conjuntos ficou pronto; a criação foi cancelada.", "O conjunto anterior está na Lixeira, se quiser recuperá-lo."), screen.Banner);
+        Assert.AreEqual(new Banner(BannerKind.Warning, "1 de 2 conjuntos ficou pronto; a criação foi cancelada.", Detail: null), screen.Banner);
     }
 
     [TestMethod]
@@ -213,7 +221,7 @@ public sealed class CreateScreenModeTests : IDisposable
     {
         await ReadyAsync(CreationMode.PerFolder);
         var creating = _screen.CreateAsync();
-        WriteSet(_trip, "07 - Viagem Bahia");
+        _engine.Last.WriteSet();
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await WaitUntilAsync(() => _engine.Runs.Count == 2);
 
@@ -236,9 +244,18 @@ public sealed class CreateScreenModeTests : IDisposable
         await _screen.AddAsync([_trip]);
 
         _screen.Mode = CreationMode.PerFolder;
+        await WaitUntilAsync(() => !_screen.IsReviewing);
+        foreach (var item in _screen.Items)
+        {
+            item.IsIncluded = true;
+        }
 
-        Assert.AreEqual("2 destes conjuntos já existem e serão substituídos. Os arquivos deles irão para a Lixeira.", _screen.ReplaceWarning);
+        Assert.AreEqual("2 destes conjuntos já existem e serão substituídos. Cada um só sai da pasta depois que o novo ficar pronto, e vai para a Lixeira.", _screen.ReplaceWarning);
         Assert.AreEqual("Substituir arquivos de recuperação", _screen.CreateText);
+
+        _screen.Items[1].IsIncluded = false;
+
+        Assert.AreEqual("1 destes conjuntos já existe e será substituído. Ele só sai da pasta depois que o novo ficar pronto, e vai para a Lixeira.", _screen.ReplaceWarning);
 
         _screen.Mode = CreationMode.PerFile;
 
@@ -247,6 +264,7 @@ public sealed class CreateScreenModeTests : IDisposable
 
     private Task ReadyAsync(CreationMode mode) => ReadyAsync(mode, _screen);
 
+    /// <summary>The photos chosen in <paramref name="mode"/>, every set estimated and included, even one up to date.</summary>
     private async Task ReadyAsync(CreationMode mode, CreateScreen screen)
     {
         await screen.AddAsync([_trip]);
@@ -256,14 +274,20 @@ public sealed class CreateScreenModeTests : IDisposable
             trial.Finish(Trip);
         }
 
+        await WaitUntilAsync(() => !screen.IsReviewing);
+        foreach (var item in screen.Items)
+        {
+            item.IsIncluded = true;
+        }
+
         Assert.IsTrue(screen.CanCreate);
     }
 
-    /// <summary>What the engine leaves in <paramref name="folder"/>: an index and one recovery file, 100 bytes each.</summary>
-    private static void WriteSet(string folder, string name)
+    /// <summary>What the Recycle Bin does: the files leave the folder.</summary>
+    private void Recycle(IReadOnlyList<string> files)
     {
-        File.WriteAllBytes(Path.Combine(folder, name + ".par2"), new byte[100]);
-        File.WriteAllBytes(Path.Combine(folder, name + ".vol0+10.par2"), new byte[100]);
+        _recycled.AddRange(files);
+        Array.ForEach([.. files], File.Delete);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

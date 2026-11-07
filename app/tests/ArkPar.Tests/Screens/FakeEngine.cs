@@ -45,6 +45,17 @@ internal sealed class FakeRun(EngineCommand command, IProgress<EngineProgress> p
 
     public void Report(string activity, double percent) => progress.Report(new EngineProgress(activity, percent));
 
+    /// <summary>
+    /// Writes what a create leaves in its set's folder, under the name it was given (a draft's, while a set is
+    /// made): the index and one recovery file.
+    /// </summary>
+    public void WriteSet(int indexSize = 100, int recoveryFileSize = 100, string recoveryFileEnd = ".vol0+10.par2")
+    {
+        var index = Command.RecoveryFile;
+        File.WriteAllBytes(index, new byte[indexSize]);
+        File.WriteAllBytes(Path.ChangeExtension(index, null) + recoveryFileEnd, new byte[recoveryFileSize]);
+    }
+
     public void Finish(EngineResult result) => _completion.SetResult(result);
 
     public void Fail(Exception failure) => _completion.SetException(failure);

@@ -86,6 +86,7 @@ public sealed partial class CreatePage : UserControl
     public CreateScreen Screen { get; } = new(
         (command, progress) => EngineRun.Start(command, progress),
         (create, stop) => EngineTrial.RunAsync(create, cancellationToken: stop),
+        (recoveryFile, stop) => EngineListing.RunAsync(recoveryFile, cancellationToken: stop),
         RecycleBin.Send);
 
     /// <summary>The window the pickers open over.</summary>

@@ -224,10 +224,17 @@
                     </Border>
                 </Grid>
 
-                <!-- The sets the create will make and where each goes, before Criar. A list, as per file can mean thousands. -->
+                <!--
+                    The sets the create will make and where each goes, before Criar: each with what is in its folder now
+                    and a box to leave it out. A list, as per file can mean thousands.
+                -->
                 <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.HasSets, Mode=OneWay}">
                     <StackPanel Spacing="10">
                         <TextBlock Text="{x:Bind Screen.SetsTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind Screen.IsReviewing, Mode=OneWay}">
+                            <ProgressRing IsActive="True" Width="14" Height="14" />
+                            <TextBlock Text="{x:Bind Screen.ReviewingText, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" />
+                        </StackPanel>
                         <InfoBar
                             IsOpen="True"
                             IsClosable="False"
@@ -235,22 +242,37 @@
                             Message="{x:Bind Screen.ParFilesWarning, Mode=OneWay}"
                             Visibility="{x:Bind local:Ui.VisibleIfText(Screen.ParFilesWarning), Mode=OneWay, FallbackValue=Collapsed}" />
                         <ListView
-                            ItemsSource="{x:Bind Screen.Sets, Mode=OneWay}"
+                            ItemsSource="{x:Bind Screen.Items, Mode=OneWay}"
                             SelectionMode="None"
-                            MaxHeight="240"
+                            MaxHeight="320"
+                            IsEnabled="{x:Bind Screen.CanChoose, Mode=OneWay}"
                             AutomationProperties.Name="Conjuntos que serão criados">
                             <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="screens:PlannedSet">
+                                <DataTemplate x:DataType="screens:ReviewedSet">
                                     <Grid ColumnSpacing="12" Padding="0,4">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel>
-                                            <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind RecoveryFile}" />
-                                            <TextBlock Text="{x:Bind Where}" Style="{StaticResource SecondaryCaption}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind BaseDirectory}" />
+                                        <CheckBox
+                                            MinWidth="0"
+                                            VerticalAlignment="Top"
+                                            IsChecked="{x:Bind IsIncluded, Mode=TwoWay}"
+                                            IsEnabled="{x:Bind IsCompared, Mode=OneWay}"
+                                            AutomationProperties.Name="{x:Bind Planned.Name}" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{x:Bind Planned.Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Planned.RecoveryFile}" />
+                                            <TextBlock Text="{x:Bind Planned.Where}" Style="{StaticResource SecondaryCaption}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Planned.BaseDirectory}" />
+                                            <TextBlock Text="{x:Bind StatusText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" />
+                                            <TextBlock
+                                                Text="{x:Bind Caution, Mode=OneWay}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                TextWrapping="Wrap"
+                                                Visibility="{x:Bind local:Ui.VisibleIfText(Caution), Mode=OneWay, FallbackValue=Collapsed}" />
                                         </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{x:Bind Meta}" Style="{StaticResource SecondaryCaption}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Planned.Meta}" Style="{StaticResource SecondaryCaption}" VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
@@ -303,18 +325,26 @@
                 </Expander>
 
                 <!-- Create (or replace the set of the same name already there). -->
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Visibility="{x:Bind Screen.HasSelection, Mode=OneWay}">
+                <!-- The warning wraps beside the button, so a narrow window never cuts it. -->
+                <Grid ColumnSpacing="8" Visibility="{x:Bind Screen.HasSelection, Mode=OneWay}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
                     <TextBlock
                         Text="{x:Bind Screen.ReplaceWarning, Mode=OneWay}"
                         Style="{StaticResource SecondaryCaption}"
+                        TextWrapping="Wrap"
+                        TextAlignment="Right"
                         VerticalAlignment="Center"
                         Visibility="{x:Bind local:Ui.VisibleIfText(Screen.ReplaceWarning), Mode=OneWay, FallbackValue=Collapsed}" />
                     <Button
+                        Grid.Column="1"
                         Content="{x:Bind Screen.CreateText, Mode=OneWay}"
                         Click="OnCreate"
                         IsEnabled="{x:Bind Screen.CanCreate, Mode=OneWay}"
                         Style="{StaticResource AccentButtonStyle}" />
-                </StackPanel>
+                </Grid>
 
                 <!-- What went wrong, in the engine's words, when something failed. -->
                 <Expander

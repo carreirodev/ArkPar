@@ -94,6 +94,43 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task RunningAgainRemakesOnlyTheSetsWhoseFilesChanged()
+    {
+        WritePhoto("praia 01.jpg", 1);
+        WritePhoto(@"viagem\ônibus.jpg", 2);
+        WritePhoto(@"viagem\2019\aniversário.jpg", 3);
+        using var screen = NewScreen(StartEngine);
+        await screen.AddAsync([_folder]);
+        screen.Mode = CreationMode.PerFolder;
+        await WaitUntilAsync(() => screen.CanCreate, "the estimate");
+        await screen.CreateAsync().WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+        Assert.AreEqual(CreateStage.Created, screen.Stage, screen.Details);
+        await WaitUntilAsync(() => !screen.IsReviewing, "the comparing");
+        Assert.AreEqual("Pular · em dia; Pular · em dia; Pular · em dia", string.Join("; ", screen.Items.Select(item => item.StatusText)));
+
+        // A month later: one photo edited, one added; "2019" untouched.
+        WritePhoto("praia 01.jpg", 11);
+        WritePhoto(@"viagem\cachoeira.jpg", 4);
+        await screen.AddAsync([_folder]);
+        await WaitUntilAsync(() => screen.CanCreate, "the comparing and the estimate");
+
+        Assert.AreEqual(
+            "Fotos de família: Refazer · 1 arquivo alterado; viagem: Refazer · 1 arquivo novo; 2019: Pular · em dia",
+            string.Join("; ", screen.Items.Select(item => $"{item.Planned.Name}: {item.StatusText}")));
+        Assert.AreEqual("2 de 3 conjuntos serão criados", screen.SetsTitle);
+
+        await screen.CreateAsync().WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+
+        Assert.AreEqual(CreateStage.Created, screen.Stage, screen.Details);
+        Assert.IsEmpty(Directory.GetFiles(_folder, "*" + "arkpar-novo*", SearchOption.AllDirectories), "No draft left.");
+        using var verify = new VerifyScreen((command, progress) => EngineRun.Start(command, progress, EngineProcess.ExePath));
+        await verify.VerifyAsync(Path.Combine(_folder, "viagem", "viagem.par2")).WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+        Assert.AreEqual(new FileCounts(Complete: 2, Damaged: 0, Missing: 0, Misnamed: 0), verify.Counts, verify.Details);
+        await WaitUntilAsync(() => !screen.IsReviewing, "the comparing");
+        Assert.IsTrue(screen.Items.All(item => item.StatusText == "Pular · em dia"), "Everything is up to date again.");
+    }
+
+    [TestMethod]
     public async Task CanceledCreateLeavesOnlyThePhotos()
     {
         using var screen = await StartSlowCreateAsync();
@@ -139,7 +176,11 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
     }
 
     private static CreateScreen NewScreen(Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> startEngine) =>
-        new(startEngine, (create, stop) => EngineTrial.RunAsync(create, EngineProcess.ExePath, stop), files => Array.ForEach([.. files], File.Delete));
+        new(
+            startEngine,
+            (create, stop) => EngineTrial.RunAsync(create, EngineProcess.ExePath, stop),
+            (recoveryFile, stop) => EngineListing.RunAsync(recoveryFile, EngineProcess.ExePath, stop),
+            files => Array.ForEach([.. files], File.Delete));
 
     private static IEngineRun StartEngine(EngineCommand command, IProgress<EngineProgress> progress) => EngineRun.Start(command, progress, EngineProcess.ExePath);
 

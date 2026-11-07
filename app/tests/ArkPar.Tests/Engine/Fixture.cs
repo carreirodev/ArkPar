@@ -10,6 +10,8 @@ internal static class Fixture
     public static string PathOf(string name) => Path.Combine(AppContext.BaseDirectory, "Engine", "Fixtures", name);
 
     public static byte[] Bytes(string name) => File.ReadAllBytes(PathOf(name));
+
+    public static string Read(string name) => File.ReadAllText(PathOf(name));
 }
 
 /// <summary>Collects progress reports synchronously, in order.</summary>

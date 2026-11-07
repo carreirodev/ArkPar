@@ -123,26 +123,25 @@ public sealed partial class Selection
     }
 
     /// <summary>
-    /// The names of the sets with a file in <paramref name="folder"/>, compared ignoring case: "Viagem" for
-    /// "Viagem.par2" or "Viagem.vol0+19.par2". One read of the folder, however many sets are asked about.
+    /// The sets with a file in <paramref name="folder"/>, by name compared ignoring case, each with its files as
+    /// <see cref="RecoverySetFiles"/> gives them: "Viagem" for "Viagem.par2" and "Viagem.vol0+19.par2". One read
+    /// of the folder, however many sets are asked about.
     /// </summary>
-    public static IReadOnlySet<string> SetNamesIn(string folder)
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> SetFilesIn(string folder)
     {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(folder))
         {
-            return names;
+            return new Dictionary<string, IReadOnlyList<string>>();
         }
 
-        foreach (var file in Directory.EnumerateFiles(folder, "*" + RecoveryExtension))
-        {
-            if (SetNameOf().Match(Path.GetFileName(file)) is { Success: true } match)
-            {
-                names.Add(match.Groups["name"].Value);
-            }
-        }
-
-        return names;
+        return Directory.EnumerateFiles(folder, "*" + RecoveryExtension)
+            .Select(file => (File: file, Match: SetNameOf().Match(Path.GetFileName(file))))
+            .Where(file => file.Match.Success)
+            .GroupBy(file => file.Match.Groups["name"].Value, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                set => set.Key,
+                IReadOnlyList<string> (set) => [.. set.Select(file => file.File).Order(StringComparer.OrdinalIgnoreCase)],
+                StringComparer.OrdinalIgnoreCase);
     }
 
     [GeneratedRegex(@"^\.vol\d+\+\d+\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]

@@ -1,0 +1,61 @@
+ArkPar
+======
+
+O ArkPar cria arquivos de recuperação (.par2) para as suas fotos e outros
+arquivos. Depois, verifica se eles continuam inteiros e repara os que
+estragaram.
+
+Funciona no Windows 11 (64 bits). Não é preciso instalar nada: tudo o que o
+ArkPar usa está dentro desta pasta.
+
+
+Como abrir
+----------
+
+1. Descompacte o arquivo ArkPar-win-x64.zip. Clique nele com o botão
+   direito, escolha "Extrair tudo..." e depois "Extrair".
+   Não abra o ArkPar de dentro do .zip sem descompactar: assim ele não
+   funciona.
+
+2. Guarde a pasta ArkPar onde preferir, por exemplo em Documentos.
+
+3. Abra a pasta ArkPar e dê dois cliques em ArkPar.exe (o Windows pode
+   mostrar o nome só como "ArkPar").
+
+4. Na primeira vez, o Windows pode avisar "O Windows protegeu o
+   computador". O aviso aparece porque o ArkPar não é assinado digitalmente.
+   Clique em "Mais informações" e depois em "Executar assim mesmo".
+
+Para abrir de novo depois, repita o passo 3. Para ter um atalho, clique em
+ArkPar.exe com o botão direito e escolha "Mostrar mais opções" >
+"Enviar para" > "Área de trabalho (criar atalho)".
+
+Para tirar o ArkPar do computador, apague a pasta ArkPar.
+
+
+Licença
+-------
+
+O ArkPar é software livre: você pode redistribuí-lo e modificá-lo nos termos
+da GNU General Public License, versão 2 ou (a seu critério) qualquer versão
+posterior (GPL-2.0-or-later). Ele é distribuído sem nenhuma garantia. O texto
+da licença está em Licenças\ArkPar e motor - GPL-2.0.txt.
+
+Créditos
+--------
+
+Quem cria, verifica e repara os arquivos .par2 é o motor par2j64.exe (pasta
+engine). Ele foi escrito por Yutaka Sawada, é parte do MultiPar e é
+distribuído sob a GPL. O ArkPar usa esse motor sem modificações. Os créditos
+e avisos de terceiros do motor estão em
+Licenças\Motor (par2j, MultiPar) - ReadMe2_English.txt.
+
+MultiPar: https://github.com/Yutaka-Sawada/MultiPar
+
+O ArkPar leva dentro o .NET e o Windows App SDK, da Microsoft. Os termos e
+avisos deles também estão na pasta Licenças.
+
+Código-fonte
+------------
+
+https://github.com/carreirodev/ArkPar

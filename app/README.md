@@ -14,7 +14,7 @@ New code in `app/` is licensed GPL-2.0-or-later, like the upstream engine.
 - Windows 11, x64.
 - .NET 10 SDK.
 - Visual Studio Build Tools 2026 with the C++ desktop workload (toolset v145), for the engine.
-- Windows App SDK 2.6 runtime, to run the app.
+- Windows App SDK 2.6 runtime, to run the app from a development build. The package below needs nothing installed.
 
 ## Commands
 
@@ -51,3 +51,9 @@ dotnet run --project app/src/ArkPar.App -- "D:\Fotos\Viagem\Viagem.par2"
 ```
 
 On the Verify and repair screen, "Verificar uma pasta…" verifies every recovery set inside a folder, at any depth, and sums them up by folder; each folder opens into the set's detail.
+
+Build the package that takes ArkPar to another PC, `app/artifacts/ArkPar-win-x64.zip`. It builds the engine, publishes the app self-contained (.NET and Windows App SDK inside, ADR-0002), and adds `package/LEIA-ME.txt` and the license texts. On the other PC, unzip it and open `ArkPar\ArkPar.exe`; nothing needs installing:
+
+```
+pwsh -File app/build-package.ps1
+```

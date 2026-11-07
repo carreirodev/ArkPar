@@ -14,8 +14,9 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
 
     <UseWinUI>true</UseWinUI>
-    <!-- Unpackaged (no MSIX) and framework-dependent: the Windows App SDK runtime is
-         installed once by the user (ADR-0002); the SDK's bootstrapper finds it at startup. -->
+    <!-- Unpackaged (no MSIX). Development builds are framework-dependent: they use the
+         Windows App SDK runtime installed on this PC, found at startup by the SDK's
+         bootstrapper. The package (app/build-package.ps1) carries both runtimes inside (ADR-0002). -->
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
   </PropertyGroup>

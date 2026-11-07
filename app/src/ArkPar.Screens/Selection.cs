@@ -14,7 +14,7 @@ public sealed partial class Selection
     internal const string RecoveryExtension = ".par2";
 
     // Hidden and system files (Thumbs.db, desktop.ini) stay out, as in the engine's own folder search.
-    internal const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System;
+    private const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System;
 
     private Selection(IReadOnlyList<string> roots)
     {

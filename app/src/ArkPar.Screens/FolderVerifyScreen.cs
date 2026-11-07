@@ -214,7 +214,7 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         Banner = null;
         Details = null;
         Counts = null;
-        ShowSets([]);
+        ShowSets([], []);
         Stage = FolderVerifyStage.Searching;
 
         using var stop = new CancellationTokenSource();
@@ -251,27 +251,42 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
             return;
         }
 
-        var unreadable = "Pastas que não puderam ser lidas:\n" + string.Join("\n", found.Unreadable);
-        if (found.Unreadable.Contains(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)), StringComparer.OrdinalIgnoreCase))
+        var leftOutDetails = "Pastas que ficaram de fora:\n" + string.Join("\n", found.LeftOut.Select(DescribeLeftOut));
+        var chosen = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder));
+        if (found.LeftOut.Any(leftOut => leftOut.Path.Equals(chosen, StringComparison.OrdinalIgnoreCase)))
         {
             // The folder chosen itself: nothing inside it was searched, so "no set found" would not be true.
-            ShowUnreadableFolder(unreadable);
+            ShowUnreadableFolder(leftOutDetails);
             return;
         }
 
-        ShowSets(found.Sets);
+        ShowSets(found.Sets, found.LeftOut);
         Heading = "Verificar uma pasta";
         FoundText = _sets.Count == 0
             ? ""
-            : PtBrazil.Count(_sets.Count, "conjunto", "conjuntos") + " em " + PtBrazil.Count(Folders.Count, "pasta", "pastas");
-        Banner = _sets.Count == 0
-            ? new Banner(BannerKind.Warning, "Nenhum conjunto de recuperação foi encontrado nesta pasta.", "Os conjuntos são os arquivos .par2 feitos na tela Criar.")
-            : found.Unreadable.Count > 0
-                ? new Banner(BannerKind.Warning, PtBrazil.Count(found.Unreadable.Count, "pasta não pôde ser lida", "pastas não puderam ser lidas") + ".", "Os conjuntos que estiverem nelas ficam de fora.")
-                : null;
-        Details = found.Unreadable.Count > 0 ? unreadable : null;
+            : PtBrazil.Count(_sets.Count, "conjunto", "conjuntos") + " em " + PtBrazil.Count(Folders.Count(folder => folder.LeftOut is null), "pasta", "pastas");
+
+        // A folder left out may hold sets: never say there is none, or later that all is intact, as if it were read.
+        var leftOutCount = found.LeftOut.Count;
+        var leftOutText = leftOutCount.ToString("N0", PtBrazil.Culture);
+        Banner = (_sets.Count, leftOutCount) switch
+        {
+            (0, 0) => new Banner(BannerKind.Warning, "Nenhum conjunto de recuperação foi encontrado nesta pasta.", "Os conjuntos são os arquivos .par2 feitos na tela Criar."),
+            (0, 1) => new Banner(BannerKind.Warning, "Nenhum conjunto foi encontrado nas pastas que puderam ser abertas.", "1 pasta ficou de fora e aparece na lista como não verificada."),
+            (0, _) => new Banner(BannerKind.Warning, "Nenhum conjunto foi encontrado nas pastas que puderam ser abertas.", $"{leftOutText} pastas ficaram de fora e aparecem na lista como não verificadas."),
+            (_, 0) => null,
+            (_, 1) => new Banner(BannerKind.Warning, "1 pasta ficou de fora.", "Ela aparece na lista como não verificada."),
+            _ => new Banner(BannerKind.Warning, $"{leftOutText} pastas ficaram de fora.", "Elas aparecem na lista como não verificadas."),
+        };
+        Details = leftOutCount > 0 ? leftOutDetails : null;
         Stage = FolderVerifyStage.Found;
     }
+
+    private static string DescribeLeftOut(LeftOutFolder folder) => folder.Reason switch
+    {
+        LeftOutReason.Link => folder.Path + " (atalho para outra pasta, não aberto)",
+        _ => folder.Path + " (não pôde ser lida)",
+    };
 
     private void ShowUnreadableFolder(string details)
     {
@@ -348,7 +363,7 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
     private void Reset()
     {
         OpenedSet = null;
-        ShowSets([]);
+        ShowSets([], []);
         Folder = null;
         Banner = null;
         Counts = null;
@@ -478,7 +493,9 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         Counts = counts;
         var total = counts.Complete + counts.Repairable + counts.Unrepairable + counts.Unverified;
         var notVerified = _sets.Count(set => set.Health == SetHealth.NotVerified);
+        var leftOut = Folders.Count(folder => folder.LeftOut is not null);
 
+        // A folder left out counts as not verified, so it never ends here.
         if (counts.Complete == total)
         {
             Banner = new Banner(BannerKind.Success, total == 1 ? "A pasta está íntegra." : $"As {total.ToString("N0", PtBrazil.Culture)} pastas estão íntegras.", Detail: null);
@@ -501,10 +518,18 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         var title = PtBrazil.Count(total, "pasta", "pastas") + ": " + JoinAnd(parts) + ".";
 
         var kind = counts.Unrepairable > 0 ? BannerKind.Error : BannerKind.Warning;
-        var detail = notVerified > 0
-            ? PtBrazil.Count(notVerified, "conjunto ficou", "conjuntos ficaram") + " sem verificar, ou com o reparo interrompido. Verifique a pasta de novo para saber como estão."
-            : null;
-        Banner = new Banner(kind, title, detail);
+        var notes = new List<string>(2);
+        if (notVerified > 0)
+        {
+            notes.Add(PtBrazil.Count(notVerified, "conjunto ficou", "conjuntos ficaram") + " sem verificar, ou com o reparo interrompido. Verifique a pasta de novo para saber como estão.");
+        }
+
+        if (leftOut > 0)
+        {
+            notes.Add(PtBrazil.Count(leftOut, "pasta ficou", "pastas ficaram") + " de fora da verificação: o motivo está na lista.");
+        }
+
+        Banner = new Banner(kind, title, notes.Count > 0 ? string.Join(" ", notes) : null);
     }
 
     private static string JoinAnd(List<string> parts) =>
@@ -516,7 +541,7 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         folders.Count(folder => folder.Group == HealthGroup.Unrepairable),
         folders.Count(folder => folder.Group == HealthGroup.Unverified));
 
-    private void ShowSets(IReadOnlyList<FoundSet> found)
+    private void ShowSets(IReadOnlyList<FoundSet> found, IReadOnlyList<LeftOutFolder> leftOut)
     {
         var root = Folder ?? "";
         _sets = [.. found.Select(set => new CheckedSet(set))];
@@ -524,7 +549,9 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         [
             .. _sets
                 .GroupBy(set => set.Found.Folder, StringComparer.OrdinalIgnoreCase)
-                .Select(folder => new CheckedFolder(NameIn(root, folder.Key), folder.Key, [.. folder])),
+                .Select(folder => new CheckedFolder(NameIn(root, folder.Key), folder.Key, [.. folder]))
+                .Concat(leftOut.Select(folder => new CheckedFolder(NameIn(root, folder.Path), folder.Path, [], folder.Reason)))
+                .OrderBy(folder => folder.Path, TreeOrder.Instance),
         ];
         FoundText = "";
         AnnounceAbilities();
@@ -534,6 +561,27 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
     private static string NameIn(string root, string path) => Path.GetRelativePath(root, path) is var inside && inside == "."
         ? Selection.FolderName(root)
         : Path.Combine(Selection.FolderName(root), inside);
+
+    /// <summary>Paths in the order the search meets them: a folder before what is inside it, siblings by name.</summary>
+    private sealed class TreeOrder : IComparer<string>
+    {
+        public static readonly TreeOrder Instance = new();
+
+        public int Compare(string? x, string? y)
+        {
+            var (left, right) = ((x ?? "").Split(Path.DirectorySeparatorChar), (y ?? "").Split(Path.DirectorySeparatorChar));
+            for (var index = 0; index < Math.Min(left.Length, right.Length); index++)
+            {
+                var order = StringComparer.CurrentCultureIgnoreCase.Compare(left[index], right[index]);
+                if (order != 0)
+                {
+                    return order;
+                }
+            }
+
+            return left.Length.CompareTo(right.Length);
+        }
+    }
 
     private void AnnounceAbilities()
     {

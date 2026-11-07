@@ -62,8 +62,8 @@ public sealed partial class FolderRow : UserControl
         SetsText.Text = folder.SetsText;
         VisualStateManager.GoToState(this, folder.Group?.ToString() ?? "Pending", useTransitions: false);
 
-        // Nothing to show before the set is verified.
-        OpenButton.Visibility = folder.HasSeveralSets || folder.Group is null ? Visibility.Collapsed : Visibility.Visible;
+        // A folder of one set, once verified; nothing to show before, or for a folder left out (no set).
+        OpenButton.Visibility = folder.Sets is [_] && folder.Group is not null ? Visibility.Visible : Visibility.Collapsed;
         ListButton.Content = folder.SetListText;
         ListButton.Visibility = folder.HasSetList ? Visibility.Visible : Visibility.Collapsed;
         if (!folder.HasSetList)

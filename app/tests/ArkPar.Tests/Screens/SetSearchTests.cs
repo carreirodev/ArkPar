@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using System.Diagnostics;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using ArkPar.Screens;
 
 namespace ArkPar.Tests.Screens;
@@ -9,6 +12,7 @@ namespace ArkPar.Tests.Screens;
 public sealed class SetSearchTests
 {
     private static readonly string[] PraiaAndItsDraft = ["Praia", "Praia.arkpar-novo"];
+    private static readonly string[] HiddenAndSystemSets = ["Natal", "Oculto", "Praia", "Privado"];
 
     private string _root = "";
     private string _year = "";
@@ -56,7 +60,7 @@ public sealed class SetSearchTests
                 new FoundSet(Path.Combine(_year, @"Praia\Praia.par2"), Path.Combine(_year, "Praia"), "Praia"),
             },
             found.Sets.ToArray());
-        Assert.IsEmpty(found.Unreadable);
+        Assert.IsEmpty(found.LeftOut);
     }
 
     [TestMethod]
@@ -72,17 +76,81 @@ public sealed class SetSearchTests
     }
 
     [TestMethod]
-    public void HiddenFoldersAndFilesAndSetsKeptAsideStayOut()
+    public void HiddenAndSystemFoldersAndHiddenSetsAreSearchedToo()
+    {
+        Write(@"Praia\Praia.par2");
+        File.SetAttributes(Write(@"Praia\Oculto.par2"), FileAttributes.Hidden);
+        Write(@"Privado\Privado.par2");
+        File.SetAttributes(Path.Combine(_year, "Privado"), FileAttributes.Directory | FileAttributes.Hidden);
+        Write(@"Natal\Natal.par2");
+        File.SetAttributes(Path.Combine(_year, "Natal"), FileAttributes.Directory | FileAttributes.System | FileAttributes.ReadOnly);
+
+        var found = SetSearch.Find(_year);
+
+        CollectionAssert.AreEqual(HiddenAndSystemSets, found.Sets.Select(set => set.Name).ToArray());
+        Assert.IsEmpty(found.LeftOut);
+    }
+
+    [TestMethod]
+    public void SetsKeptAsideAndTheRecycleBinStayOut()
     {
         Write(@"Praia\Praia.par2");
         Write(@"Praia\Praia.par2.anterior");
-        File.SetAttributes(Write(@"Praia\Oculto.par2"), FileAttributes.Hidden);
-        Write(@"Lixo\Lixo.par2");
-        File.SetAttributes(Path.Combine(_year, "Lixo"), FileAttributes.Directory | FileAttributes.Hidden);
+        Write(@"$RECYCLE.BIN\S-1-5-21\$RABC123.par2");
+        Write(@"System Volume Information\Algo.par2");
 
         var found = SetSearch.Find(_year);
 
         Assert.AreEqual("Praia", found.Sets.Single().Name);
+        Assert.IsEmpty(found.LeftOut, "Windows' own folders hold no set of the user's.");
+    }
+
+    [TestMethod]
+    public void LinkToAnotherFolderIsLeftOutAndSaidSo()
+    {
+        Write(@"Praia\Praia.par2");
+        var elsewhere = Path.Combine(_root, "Outro");
+        Directory.CreateDirectory(elsewhere);
+        File.WriteAllBytes(Path.Combine(elsewhere, "Outro.par2"), [1, 2, 3]);
+        var link = Path.Combine(_year, "Atalho");
+        MakeJunction(link, elsewhere);
+        try
+        {
+            var found = SetSearch.Find(_year);
+
+            Assert.AreEqual("Praia", found.Sets.Single().Name);
+            CollectionAssert.AreEqual(new[] { new LeftOutFolder(link, LeftOutReason.Link) }, found.LeftOut.ToArray());
+        }
+        finally
+        {
+            // Removes the link alone: the clean-up would otherwise trip on it.
+            Directory.Delete(link);
+        }
+    }
+
+    [TestMethod]
+    public void FolderThatCannotBeReadIsLeftOutAndTheOthersAreSearched()
+    {
+        Write(@"Praia\Praia.par2");
+        Write(@"Trancada\Trancada.par2");
+        var locked = new DirectoryInfo(Path.Combine(_year, "Trancada"));
+        // The test runs as a Windows user, so there is one.
+        var deny = new FileSystemAccessRule(WindowsIdentity.GetCurrent().User!, FileSystemRights.ListDirectory, AccessControlType.Deny);
+        var security = locked.GetAccessControl();
+        security.AddAccessRule(deny);
+        locked.SetAccessControl(security);
+        try
+        {
+            var found = SetSearch.Find(_year);
+
+            Assert.AreEqual("Praia", found.Sets.Single().Name);
+            CollectionAssert.AreEqual(new[] { new LeftOutFolder(locked.FullName, LeftOutReason.Unreadable) }, found.LeftOut.ToArray());
+        }
+        finally
+        {
+            security.RemoveAccessRule(deny);
+            locked.SetAccessControl(security);
+        }
     }
 
     [TestMethod]
@@ -110,5 +178,13 @@ public sealed class SetSearchTests
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? _year);
         File.WriteAllBytes(path, [1, 2, 3]);
         return path;
+    }
+
+    private static void MakeJunction(string link, string target)
+    {
+        // A junction needs no administrator rights, unlike a symbolic link.
+        using var mklink = Process.Start(new ProcessStartInfo("cmd.exe", ["/c", "mklink", "/J", link, target]) { CreateNoWindow = true, RedirectStandardOutput = true }) ?? throw new InvalidOperationException("cmd did not start.");
+        mklink.WaitForExit();
+        Assert.AreEqual(0, mklink.ExitCode, "mklink /J failed.");
     }
 }

@@ -6,15 +6,17 @@ namespace ArkPar.Screens;
 
 /// <summary>
 /// A folder of a folder verification: one line of the summary, with the sets directly in it. A folder with one
-/// set opens that set; one with several lists those with a problem.
+/// set opens that set; one with several lists those with a problem. A folder the search could not look into is a
+/// line too, never verified, so the summary never says more was verified than was.
 /// </summary>
 public sealed class CheckedFolder : Observable
 {
-    internal CheckedFolder(string name, string path, IReadOnlyList<CheckedSet> sets)
+    internal CheckedFolder(string name, string path, IReadOnlyList<CheckedSet> sets, LeftOutReason? leftOut = null)
     {
         Name = name;
         Path = path;
         Sets = sets;
+        LeftOut = leftOut;
         foreach (var set in sets)
         {
             set.PropertyChanged += OnSetChanged;
@@ -30,14 +32,18 @@ public sealed class CheckedFolder : Observable
     /// <summary>The sets directly in the folder, by name.</summary>
     public IReadOnlyList<CheckedSet> Sets { get; }
 
+    /// <summary>Why the search did not look into the folder; null when it did. Its sets, if any, are unknown.</summary>
+    public LeftOutReason? LeftOut { get; }
+
     public bool HasSeveralSets => Sets.Count > 1;
 
-    /// <summary>Which sets the folder holds: "Praia.par2", or "300 conjuntos".</summary>
-    public string SetsText => Sets is [var only] ? only.FileName : PtBrazil.Count(Sets.Count, "conjunto", "conjuntos");
+    /// <summary>Which sets the folder holds: "Praia.par2", or "300 conjuntos"; nothing when it was left out.</summary>
+    public string SetsText => LeftOut is not null ? "" : Sets is [var only] ? only.FileName : PtBrazil.Count(Sets.Count, "conjunto", "conjuntos");
 
-    /// <summary>The folder's group: its worst set's, once every set has one; null before.</summary>
+    /// <summary>The folder's group: not verified when left out; else its worst set's, once every set has one; null before.</summary>
     public HealthGroup? Group =>
-        Sets.Any(set => set.Group is null) ? null
+        LeftOut is not null ? HealthGroup.Unverified
+        : Sets.Any(set => set.Group is null) ? null
         : Sets.Any(set => set.Group == HealthGroup.Unrepairable) ? HealthGroup.Unrepairable
         : Sets.Any(set => set.Group == HealthGroup.Repairable) ? HealthGroup.Repairable
         : Sets.Any(set => set.Group == HealthGroup.Unverified) ? HealthGroup.Unverified
@@ -51,6 +57,16 @@ public sealed class CheckedFolder : Observable
     {
         get
         {
+            switch (LeftOut)
+            {
+                case LeftOutReason.Unreadable:
+                    return "Não pôde ser lida · nada nela foi verificado";
+                case LeftOutReason.Link:
+                    return "Atalho para outra pasta, não aberto · nada nele foi verificado";
+                case null:
+                    break;
+            }
+
             if (Sets is [var only])
             {
                 return only.HealthText;

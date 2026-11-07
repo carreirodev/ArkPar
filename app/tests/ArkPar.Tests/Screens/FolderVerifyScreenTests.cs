@@ -21,6 +21,7 @@ public sealed class FolderVerifyScreenTests : IDisposable
     private static readonly FoundSet[] AllSets = [RootSet, Natal, Photo1, Photo2, Photo3];
     private static readonly string[] FolderNames = ["2019", @"2019\Natal", @"2019\Praia"];
     private static readonly string[] FolderSets = ["2019.par2", "Natal.par2", "3 conjuntos"];
+    private static readonly string[] LeftOutFolderNames = ["2019", @"2019\Atalho", @"2019\Natal", @"2019\Privado"];
     private static readonly string[] PraiaFiles = ["IMG_1.JPG.par2", "IMG_2.JPG.par2", "IMG_3.JPG.par2"];
 
     private static readonly EngineResult Complete = FakeEngine.Result(EngineOutcome.Completed, 0, "verify-complete");
@@ -81,21 +82,54 @@ public sealed class FolderVerifyScreenTests : IDisposable
     }
 
     [TestMethod]
-    public async Task FoldersThatCannotBeReadAreMentioned()
+    public async Task FoldersLeftOutAreListedAsNotVerifiedInTheOrderMet()
     {
-        _found = new FoundSets([Natal], [@"P:\Fotos\2019\Privado"]);
+        _found = new FoundSets([RootSet, Natal], [new LeftOutFolder(@"P:\Fotos\2019\Atalho", LeftOutReason.Link), new LeftOutFolder(@"P:\Fotos\2019\Privado", LeftOutReason.Unreadable)]);
 
         await _screen.ChooseAsync(Root);
 
         Assert.IsTrue(_screen.CanStart);
-        Assert.AreEqual(new Banner(BannerKind.Warning, "1 pasta não pôde ser lida.", "Os conjuntos que estiverem nelas ficam de fora."), _screen.Banner);
+        Assert.AreEqual("2 conjuntos em 2 pastas", _screen.FoundText);
+        CollectionAssert.AreEqual(LeftOutFolderNames, _screen.Folders.Select(folder => folder.Name).ToArray());
+        var (link, unreadable) = (_screen.Folders[1], _screen.Folders[3]);
+        Assert.AreEqual((HealthGroup?)HealthGroup.Unverified, link.Group);
+        Assert.AreEqual("Atalho para outra pasta, não aberto · nada nele foi verificado", link.HealthText);
+        Assert.AreEqual((HealthGroup?)HealthGroup.Unverified, unreadable.Group);
+        Assert.AreEqual("Não pôde ser lida · nada nela foi verificado", unreadable.HealthText);
+        Assert.AreEqual("", unreadable.SetsText);
+        Assert.IsFalse(unreadable.HasSetList);
+        Assert.AreEqual(new Banner(BannerKind.Warning, "2 pastas ficaram de fora.", "Elas aparecem na lista como não verificadas."), _screen.Banner);
         Assert.Contains(@"P:\Fotos\2019\Privado", _screen.Details ?? "");
+    }
+
+    [TestMethod]
+    public async Task SummaryNeverSaysAllIntactWhileAFolderWasLeftOut()
+    {
+        _found = new FoundSets([Natal], [new LeftOutFolder(@"P:\Fotos\2019\Privado", LeftOutReason.Unreadable)]);
+
+        await VerifyAllAsync(Complete);
+
+        Assert.AreEqual(new FolderCounts(Complete: 1, Repairable: 0, Unrepairable: 0, Unverified: 1), _screen.Counts);
+        Assert.AreEqual(new Banner(BannerKind.Warning, "2 pastas: 1 íntegra e 1 não verificada.", "1 pasta ficou de fora da verificação: o motivo está na lista."), _screen.Banner);
+        Assert.Contains(@"P:\Fotos\2019\Privado", _screen.Details ?? "");
+    }
+
+    [TestMethod]
+    public async Task NoSetInTheFoldersReadButSomeLeftOutDoesNotSayThereIsNone()
+    {
+        _found = new FoundSets([], [new LeftOutFolder(@"P:\Fotos\2019\Privado", LeftOutReason.Unreadable)]);
+
+        await _screen.ChooseAsync(Root);
+
+        Assert.IsFalse(_screen.CanStart);
+        Assert.AreEqual(new Banner(BannerKind.Warning, "Nenhum conjunto foi encontrado nas pastas que puderam ser abertas.", "1 pasta ficou de fora e aparece na lista como não verificada."), _screen.Banner);
+        Assert.AreEqual("Não pôde ser lida · nada nela foi verificado", _screen.Folders.Single().HealthText);
     }
 
     [TestMethod]
     public async Task ChosenFolderThatCannotBeReadSaysSoRatherThanEmpty()
     {
-        _found = new FoundSets([], [Root]);
+        _found = new FoundSets([], [new LeftOutFolder(Root, LeftOutReason.Unreadable)]);
 
         await _screen.ChooseAsync(Root);
 

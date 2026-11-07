@@ -44,6 +44,11 @@ da GNU General Public License, versão 2 ou (a seu critério) qualquer versão
 posterior (GPL-2.0-or-later). Ele é distribuído sem nenhuma garantia. O texto
 da licença está em Licenças\ArkPar e motor - GPL-2.0.txt.
 
+Permissão adicional: os autores do código do ArkPar também permitem
+combiná-lo com o Windows App SDK e o .NET, da Microsoft, e distribuí-lo junto
+com eles, cada um sob os próprios termos. Essa permissão vale só para o
+código do ArkPar. O motor é um programa à parte, sob a GPL.
+
 Créditos
 --------
 

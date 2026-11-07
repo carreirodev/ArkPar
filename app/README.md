@@ -9,6 +9,8 @@ The new GUI (WinUI 3, C# on .NET 10, unpackaged) and its tests. It drives the up
 
 New code in `app/` is licensed GPL-2.0-or-later, like the upstream engine.
 
+Additional permission: the copyright holders of the code in `app/` also permit combining it with the Microsoft Windows App SDK and the .NET runtime, and distributing it together with them, each under its own license terms. The package (`build-package.ps1`) does exactly that. This permission covers only the code in `app/`. The engine (`source/par2j`) is a separate program under its own GPL terms.
+
 ## Requirements
 
 - Windows 11, x64.

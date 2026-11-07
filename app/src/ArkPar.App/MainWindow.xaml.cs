@@ -50,14 +50,7 @@ public sealed partial class MainWindow : Window
             }
             finally
             {
-                try
-                {
-                    Verify.Close();
-                }
-                finally
-                {
-                    _notices.Stop();
-                }
+                Verify.Close();
             }
         };
     }

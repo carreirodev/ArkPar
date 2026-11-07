@@ -1,44 +1,53 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 using System.Runtime.InteropServices;
+using System.Security;
 using ArkPar.Screens;
-using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
+using Microsoft.Win32;
+using Windows.UI.Notifications;
 
 namespace ArkPar.App;
 
 /// <summary>
 /// Windows notifications that tell how a create, verification or repair ended, for a user who was looking elsewhere.
-/// Clicking one brings the ArkPar window back.
+/// Clicking one while ArkPar is open brings its window back.
 /// </summary>
 /// <remarks>
-/// Windows may refuse them (turned off by policy, or a Windows App SDK part missing on that PC). ArkPar then still
-/// opens and works, the screen still shows how each task ended, and <c>failed</c> says why there are none.
+/// They use the notifications built into Windows, not the Windows App SDK's: those need the SDK installed on the PC
+/// (its Singleton package), and the package carries the SDK inside instead (ADR-0002), so on a PC with nothing
+/// installed they are not supported. Windows only needs to know the app's name, which ArkPar writes for the current
+/// user. If Windows still refuses, ArkPar works the same, the screen shows how each task ended, and <c>failed</c>
+/// says why there are no notifications.
 /// </remarks>
 internal sealed class TaskNotices
 {
+    // Who the notifications come from, as Windows knows it (an AppUserModelID).
+    private const string AppId = "ArkPar";
+
+    private readonly Action _bringBack;
     private readonly Action<Exception> _failed;
-    private bool _registered;
+    private ToastNotifier? _notifier;
+
+    // The last notification shown: kept, so its click still reaches this window.
+    private ToastNotification? _shown;
 
     /// <param name="bringBack">Shows the window again; called on a background thread.</param>
     /// <param name="failed">Windows refused a notification; called on the thread that asked for it.</param>
     public TaskNotices(Action bringBack, Action<Exception> failed)
     {
+        _bringBack = bringBack;
         _failed = failed;
-        if (!AppNotificationManager.IsSupported())
-        {
-            failed(new NotSupportedException("Windows does not support app notifications for ArkPar here."));
-            return;
-        }
-
         try
         {
-            // Before Register, so a click reaches this process instead of starting another ArkPar.
-            AppNotificationManager.Default.NotificationInvoked += (_, _) => bringBack();
-            AppNotificationManager.Default.Register();
-            _registered = true;
+            // The name Windows shows above each notification.
+            using (var app = Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\" + AppId))
+            {
+                app.SetValue("DisplayName", "ArkPar");
+            }
+
+            _notifier = ToastNotificationManager.CreateToastNotifier(AppId);
         }
-        catch (COMException failure)
+        catch (Exception failure) when (failure is COMException or IOException or UnauthorizedAccessException or SecurityException)
         {
             failed(failure);
         }
@@ -47,34 +56,30 @@ internal sealed class TaskNotices
     /// <summary>A notification with what the screen now says, e.g. "A pasta está íntegra.".</summary>
     public void Show(Banner banner)
     {
-        if (!_registered)
+        if (_notifier is null)
         {
             return;
         }
 
-        var builder = new AppNotificationBuilder().AddText(banner.Title);
+        var content = ToastNotificationManager.GetTemplateContent(banner.Detail is null ? ToastTemplateType.ToastText01 : ToastTemplateType.ToastText02);
+        var lines = content.GetElementsByTagName("text");
+        lines[0].AppendChild(content.CreateTextNode(banner.Title));
         if (banner.Detail is { } detail)
         {
-            builder.AddText(detail);
+            lines[1].AppendChild(content.CreateTextNode(detail));
         }
 
+        var notice = new ToastNotification(content);
+        notice.Activated += (_, _) => _bringBack();
         try
         {
-            AppNotificationManager.Default.Show(builder.BuildNotification());
+            _notifier.Show(notice);
+            _shown = notice;
         }
         catch (COMException failure)
         {
-            _registered = false;
+            _notifier = null;
             _failed(failure);
-        }
-    }
-
-    /// <summary>Called when the window closes, so a notification clicked later starts ArkPar again.</summary>
-    public void Stop()
-    {
-        if (_registered)
-        {
-            AppNotificationManager.Default.Unregister();
         }
     }
 }

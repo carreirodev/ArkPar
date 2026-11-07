@@ -9,3 +9,5 @@ The package (`app/build-package.ps1`) is a zip that carries both runtimes inside
 At first we planned to have the user install the Windows App SDK runtime once. That plan overlooked that a clean Windows 11 lacks .NET 10 too. With .NET inside the zip and the Windows App SDK runtime installed separately, the zip is about 64 MB. But an app that does not open until the user has done a manual step is easy to get wrong, so we chose the bigger zip with no step to forget (WPC-380).
 
 Development builds (`dotnet build`, `dotnet run`) stay framework-dependent, so they are quick. Only the package carries the runtimes.
+
+Carrying the Windows App SDK inside costs the parts of it that need its runtime installed on the PC (its Singleton package). App notifications are one: on a clean Windows 11, `AppNotificationManager.IsSupported()` is false for the package. So ArkPar's end-of-task notifications use the notifications built into Windows (`Windows.UI.Notifications`) instead, registering the app's name for the current user (WPC-382). Check any other Windows App SDK feature against a clean PC (Windows Sandbox) before relying on it.

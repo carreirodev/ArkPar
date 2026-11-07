@@ -48,6 +48,16 @@ public sealed class VerificationReportTests
     }
 
     [TestMethod]
+    public void SetAtTheRootOfADriveHasTheRootAsItsFolder()
+    {
+        // The engine writes "BaseDirectory":"P:", which on its own means P:'s current folder, not its root.
+        var report = VerificationReport.Load(Fixture.PathOf("verify-root.json"));
+
+        Assert.AreEqual(@"P:\", report.BaseDirectory);
+        Assert.AreEqual(@"P:\praia 01.jpg", report.CompleteFiles.Single());
+    }
+
+    [TestMethod]
     public void FilesHoldingPartsOfAPhotoAreFound()
     {
         var report = VerificationReport.Load(Fixture.PathOf("verify-found.json"));

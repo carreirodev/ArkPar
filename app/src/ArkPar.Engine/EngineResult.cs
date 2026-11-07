@@ -12,9 +12,6 @@ namespace ArkPar.Engine;
 /// <param name="Output">Everything the engine printed, for the log.</param>
 public sealed record EngineResult(EngineOutcome Outcome, int ExitCode, VerificationReport? Report, string Output)
 {
-    private const int RecoveryFilesIncompleteBit = 256;
-
     /// <summary>A recovery file of the set is damaged or missing, even if every photo is fine.</summary>
-    public bool RecoveryFilesIncomplete =>
-        Outcome is not (EngineOutcome.Error or EngineOutcome.Canceled) && (ExitCode & RecoveryFilesIncompleteBit) != 0;
+    public bool RecoveryFilesIncomplete => Outcome != EngineOutcome.Canceled && EngineOutcomes.RecoveryFilesIncomplete(ExitCode);
 }

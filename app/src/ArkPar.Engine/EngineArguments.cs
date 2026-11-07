@@ -19,7 +19,7 @@ internal static class EngineArguments
 
     // Default CPU threads (0) + 256: use the GPU when there is one. Without a usable GPU the engine
     // falls back to the CPU by itself (rs_encode.c and rs_decode.c, after init_OpenCL fails).
-    private const string CpuAndGpu = "/lc256";
+    internal const string CpuAndGpu = "/lc256";
 
     public static IReadOnlyList<string> For(EngineCommand command, string runDirectory) => command switch
     {

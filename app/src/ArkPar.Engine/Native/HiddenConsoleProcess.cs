@@ -92,6 +92,7 @@ internal sealed class HiddenConsoleProcess : IDisposable
         lock (_keyboardLock)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            // The engine's keys are ASCII letters, one byte each; anything wider throws instead of being cut.
             _keyboard.WriteByte(checked((byte)key));
             _keyboard.Flush();
         }
@@ -111,6 +112,8 @@ internal sealed class HiddenConsoleProcess : IDisposable
                 waitHandle.Dispose();
                 if (GetExitCodeProcess(_process, out var exitCode))
                 {
+                    // Same 32 bits, read as signed: the engine's codes are small bit masks, and a value
+                    // with the high bit set (a crash code) stays distinct and maps to an error.
                     exited.TrySetResult(unchecked((int)exitCode));
                 }
                 else
@@ -162,6 +165,8 @@ internal sealed class HiddenConsoleProcess : IDisposable
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "Could not prepare the engine's output pipe.");
         }
 
+        // CreateProcess needs the attribute list and the inherited-handle array in unmanaged memory,
+        // and the raw handle value; all of it is released in the finally blocks below.
         var attributeListSize = IntPtr.Zero;
         InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeListSize);
         var attributeList = Marshal.AllocHGlobal(attributeListSize);

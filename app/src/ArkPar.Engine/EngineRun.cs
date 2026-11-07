@@ -92,10 +92,10 @@ public sealed class EngineRun : IDisposable
     }
 
     /// <summary>Pauses the task. Does nothing if it is already paused, canceled or finished.</summary>
-    public void Pause() => SendKeyUnlessFinished('p', pause: true);
+    public void Pause() => SetPaused(true);
 
     /// <summary>Resumes a paused task.</summary>
-    public void Resume() => SendKeyUnlessFinished('r', pause: false);
+    public void Resume() => SetPaused(false);
 
     /// <summary>
     /// Asks the engine to stop. If it has not stopped after a few seconds (it was in a step that does not
@@ -130,61 +130,89 @@ public sealed class EngineRun : IDisposable
         }
     }
 
-    private void SendKeyUnlessFinished(char key, bool pause)
+    /// <summary>
+    /// Sends the pause or resume key unless the task is already in that state, canceled or finished.
+    /// The engine prints " Pause" without flushing it, so the state is tracked here, not read back.
+    /// </summary>
+    private void SetPaused(bool paused)
     {
         lock (_lock)
         {
-            if (_finished || _cancelRequested.Task.IsCompleted || _paused == pause)
+            if (_finished || _cancelRequested.Task.IsCompleted || _paused == paused)
             {
                 return;
             }
 
-            _process.SendKey(key);
-            _paused = pause;
+            _process.SendKey(paused ? 'p' : 'r');
+            _paused = paused;
         }
     }
 
     private async Task<EngineResult> RunAsync(string runDirectory, TimeSpan cancelGracePeriod)
     {
+        EngineResult result;
         try
         {
-            var reading = Task.Factory.StartNew(ReadOutput, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-            var exit = _process.WaitForExitAsync();
-            if (await Task.WhenAny(exit, _cancelRequested.Task).ConfigureAwait(false) != exit
-                && await Task.WhenAny(exit, Task.Delay(cancelGracePeriod)).ConfigureAwait(false) != exit)
-            {
-                lock (_lock)
-                {
-                    _killed = true;
-                    _process.Kill();
-                }
-            }
-
-            var exitCode = await exit.ConfigureAwait(false);
-            await reading.ConfigureAwait(false);
-
-            EngineOutcome outcome;
-            lock (_lock)
-            {
-                _finished = true;
-                outcome = _killed ? EngineOutcome.Canceled : EngineOutcomes.FromExitCode(exitCode);
-            }
-
-            var report = Command is EngineCommand.Verify or EngineCommand.Repair && outcome is not (EngineOutcome.Error or EngineOutcome.Canceled)
-                ? VerificationReport.Load(EngineArguments.ReportPath(Command.RecoveryFile, runDirectory))
-                : null;
-            return new EngineResult(outcome, exitCode, report, _output.Text);
+            result = await RunEngineAsync(runDirectory, cancelGracePeriod).ConfigureAwait(false);
         }
-        finally
+        catch (Exception failure)
+        {
+            // Clean up, without letting a cleanup failure hide why the run failed.
+            try
+            {
+                CleanUp(runDirectory);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException(failure, cleanupFailure);
+            }
+
+            throw;
+        }
+
+        CleanUp(runDirectory);
+        return result;
+    }
+
+    private void CleanUp(string runDirectory)
+    {
+        lock (_lock)
+        {
+            _finished = true;
+            _process.Dispose();
+        }
+
+        Directory.Delete(runDirectory, recursive: true);
+    }
+
+    private async Task<EngineResult> RunEngineAsync(string runDirectory, TimeSpan cancelGracePeriod)
+    {
+        var reading = Task.Factory.StartNew(ReadOutput, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var exit = _process.WaitForExitAsync();
+        if (await Task.WhenAny(exit, _cancelRequested.Task).ConfigureAwait(false) != exit
+            && await Task.WhenAny(exit, Task.Delay(cancelGracePeriod)).ConfigureAwait(false) != exit)
         {
             lock (_lock)
             {
-                _finished = true;
-                _process.Dispose();
+                _killed = true;
+                _process.Kill();
             }
-
-            Directory.Delete(runDirectory, recursive: true);
         }
+
+        var exitCode = await exit.ConfigureAwait(false);
+        await reading.ConfigureAwait(false);
+
+        EngineOutcome outcome;
+        lock (_lock)
+        {
+            _finished = true;
+            outcome = _killed ? EngineOutcome.Canceled : EngineOutcomes.FromExitCode(exitCode);
+        }
+
+        var report = Command is EngineCommand.Verify or EngineCommand.Repair && outcome is not (EngineOutcome.Error or EngineOutcome.Canceled)
+            ? VerificationReport.Load(EngineArguments.ReportPath(Command.RecoveryFile, runDirectory))
+            : null;
+        return new EngineResult(outcome, exitCode, report, _output.Text);
     }
 
     private void ReadOutput()

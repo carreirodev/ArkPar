@@ -66,6 +66,13 @@ public sealed class VerificationReport
         var baseDirectory = ToWindowsPath(root.GetProperty(BaseDirectoryKey).GetString()
             ?? throw new JsonException($"'{BaseDirectoryKey}' is null in '{jsonPath}'."));
 
+        // json.c drops the folder's trailing '\', so a set at the root of a drive comes as "E:",
+        // which Windows reads as E:'s current folder. Put the root back.
+        if (baseDirectory.EndsWith(':'))
+        {
+            baseDirectory += '\\';
+        }
+
         string FullPath(string name) => Path.Combine(baseDirectory, ToWindowsPath(name));
 
         IReadOnlyList<string> Files(string property) =>

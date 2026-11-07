@@ -14,6 +14,10 @@ public abstract record EngineCommand
     public string RecoveryFile { get; }
 
     /// <summary>Creates a recovery set protecting <paramref name="SourceFiles"/>, all inside <paramref name="BaseDirectory"/>.</summary>
+    /// <param name="RecoveryFile">
+    /// Put it directly in <paramref name="BaseDirectory"/>: verify and repair look for the photos
+    /// relative to the recovery file's own folder (the engine's default when no <c>/d</c> is given).
+    /// </param>
     /// <param name="RedundancyPercent">From 0.01 to 1000, with up to two decimals.</param>
     public sealed record Create(string RecoveryFile, string BaseDirectory, IReadOnlyList<string> SourceFiles, decimal RedundancyPercent)
         : EngineCommand(RecoveryFile);

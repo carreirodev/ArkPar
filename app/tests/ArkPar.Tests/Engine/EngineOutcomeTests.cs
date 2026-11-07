@@ -33,6 +33,8 @@ public sealed class EngineOutcomeTests
 
     [TestMethod]
     [DataRow(8 | 4, DisplayName = "12: needs more recovery data (captured)")]
+    [DataRow(32 | 8 | 4, DisplayName = "44: a rename is possible, but the rest needs more recovery data")]
+    [DataRow(64 | 8 | 4, DisplayName = "76: a rejoin is possible, but the rest needs more recovery data")]
     [DataRow(16 | 4, DisplayName = "20: repair failed")]
     [DataRow(4, DisplayName = "4: incomplete, nothing can repair it")]
     public void RepairImpossible(int exitCode) => Assert.AreEqual(EngineOutcome.RepairImpossible, EngineOutcomes.FromExitCode(exitCode));

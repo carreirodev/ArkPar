@@ -8,19 +8,21 @@ namespace ArkPar.Tests.Engine;
 [TestClass]
 public sealed class EngineRunTests(TestContext testContext)
 {
+    private string _workDir = "";
     private string _folder = "";
 
     [TestInitialize]
     public void CreateFolder()
     {
-        _folder = Path.Combine(Path.GetTempPath(), "ArkPar.Tests", Guid.NewGuid().ToString("N"), "Fotos de família");
+        _workDir = Path.Combine(Path.GetTempPath(), "ArkPar.Tests", Guid.NewGuid().ToString("N"));
+        _folder = Path.Combine(_workDir, "Fotos de família");
         Directory.CreateDirectory(Path.Combine(_folder, "viagem"));
     }
 
     [TestCleanup]
     public void DeleteFolder()
     {
-        Directory.Delete(Path.GetDirectoryName(_folder)!, recursive: true);
+        Directory.Delete(_workDir, recursive: true);
     }
 
     [TestMethod]
@@ -36,7 +38,8 @@ public sealed class EngineRunTests(TestContext testContext)
 
         var verified = await RunAsync(new EngineCommand.Verify(RecoveryFile));
         Assert.AreEqual(EngineOutcome.Completed, verified.Outcome, verified.Output);
-        CollectionAssert.AreEquivalent(photos, verified.Report!.CompleteFiles.ToArray());
+        Assert.IsNotNull(verified.Report);
+        CollectionAssert.AreEquivalent(photos, verified.Report.CompleteFiles.ToArray());
     }
 
     [TestMethod]
@@ -51,7 +54,8 @@ public sealed class EngineRunTests(TestContext testContext)
 
         var verified = await RunAsync(new EngineCommand.Verify(RecoveryFile));
         Assert.AreEqual(EngineOutcome.RepairPossible, verified.Outcome, verified.Output);
-        Assert.AreEqual(photo, verified.Report!.DamagedFiles.Single());
+        Assert.IsNotNull(verified.Report);
+        Assert.AreEqual(photo, verified.Report.DamagedFiles.Single());
 
         var repaired = await RunAsync(new EngineCommand.Repair(RecoveryFile));
         Assert.AreEqual(EngineOutcome.Completed, repaired.Outcome, repaired.Output);
@@ -162,7 +166,7 @@ public sealed class EngineRunTests(TestContext testContext)
         var create = new EngineCommand.Create(RecoveryFile, _folder, [photo], RedundancyPercent: 100);
         return EngineRun.Start(
             create,
-            runDirectory => [.. EngineArguments.For(create, runDirectory).Select(argument => argument == "/lc256" ? "/lc1" : argument)],
+            runDirectory => [.. EngineArguments.For(create, runDirectory).Select(argument => argument == EngineArguments.CpuAndGpu ? "/lc1" : argument)],
             progress,
             EngineProcess.ExePath,
             EngineRun.DefaultCancelGracePeriod);

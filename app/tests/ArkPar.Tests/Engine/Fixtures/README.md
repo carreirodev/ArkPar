@@ -13,4 +13,5 @@ Captured on 2026-11-07 on a virtual drive `P:` (so no personal path is stored), 
 | `repair.txt`, `.json` | `r` with the same options, on that damage | 16 |
 | `verify-impossible.txt`, `.json` | `v`, after deleting `praia 01.jpg` and `aniversário.jpg` (more than the 50% redundancy) | 12 |
 | `verify-found.json` | `v /uo /vl2 ...`, on a new set, after replacing `praia 01.jpg` with a 1 MB partial copy `praia 01 - cópia.jpg` | 132 |
+| `verify-root.json` | `v /uo /lc256 /vdP:\json /w P:\fotos.par2`, on a set protecting `P:\praia 01.jpg` at the root of the drive | 0 |
 | `create-canceled.txt` | `c /uo /lc1 /rr100` on a 100 MB file, keys `p` then `c` sent through the hidden console | 2 |

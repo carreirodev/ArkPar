@@ -27,10 +27,12 @@ internal static class EngineOutcomes
     private const int FatalError = 1;
     private const int CanceledByKey = 2;
     private const int InputFilesIncomplete = 4;
+    private const int NeedsMoreBlocks = 8;
     private const int RepairSucceeded = 16;
     private const int RenamePossible = 32;
     private const int RejoinPossible = 64;
     private const int RepairablePossible = 128;
+    private const int RecoveryFilesIncompleteBit = 256;
     private const int KnownBits = 0x1FF;
 
     public static EngineOutcome FromExitCode(int exitCode)
@@ -56,9 +58,19 @@ internal static class EngineOutcomes
             return EngineOutcome.RepairImpossible; // 16 | 4: the repair ran and failed.
         }
 
-        // 128 | 8 | 4 means "just enough recovery data, may fail": the engine tries it, so the screen offers it.
+        if ((exitCode & NeedsMoreBlocks) != 0)
+        {
+            // 128 | 8 | 4 means "just enough recovery data, may fail": the engine tries it, so the screen offers it.
+            // 8 without 128 means some photos cannot be rebuilt, even when another can be renamed (32) or rejoined (64).
+            return (exitCode & RepairablePossible) != 0 ? EngineOutcome.RepairPossible : EngineOutcome.RepairImpossible;
+        }
+
         return (exitCode & (RenamePossible | RejoinPossible | RepairablePossible)) != 0
             ? EngineOutcome.RepairPossible
             : EngineOutcome.RepairImpossible;
     }
+
+    /// <summary>A recovery file of the set is damaged or missing (bit 256), whatever happened to the photos.</summary>
+    public static bool RecoveryFilesIncomplete(int exitCode) =>
+        FromExitCode(exitCode) is not (EngineOutcome.Error or EngineOutcome.Canceled) && (exitCode & RecoveryFilesIncompleteBit) != 0;
 }

@@ -1,12 +1,21 @@
 <!-- SPDX-License-Identifier: GPL-2.0-or-later -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MSTest" Version="4.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ArkPar.Engine\ArkPar.Engine.csproj" />
+  </ItemGroup>
+
+  <!-- Real engine output and JSON results, captured byte for byte (see Engine/Fixtures/README.md). -->
+  <ItemGroup>
+    <None Include="Engine\Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The engine is built by app/build-engine.ps1, not by dotnet (it is a C++ project).

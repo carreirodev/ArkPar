@@ -1,0 +1,13 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- Drives the engine (par2j64.exe): starts it, reads its progress and result, and sends it
+     the cancel, pause and resume keys. No UI here, so the tests can use it directly. -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>ArkPar.Engine</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ArkPar.Tests" />
+  </ItemGroup>
+</Project>

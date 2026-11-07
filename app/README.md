@@ -2,6 +2,10 @@
 
 The new GUI (WinUI 3, C# on .NET 10, unpackaged) and its tests. It drives the upstream engine `par2j64.exe`, built unmodified from `../source/par2j` (see `../docs/adr/`).
 
+- `src/ArkPar.App`: the GUI.
+- `src/ArkPar.Engine`: runs the engine in a hidden console, reports its progress, pauses, resumes and cancels it with the keys it reads there, and reads its result (`EngineRun`).
+- `tests/ArkPar.Tests`: unit tests over captured real engine output (`Engine/Fixtures`), and tests that run the real engine.
+
 New code in `app/` is licensed GPL-2.0-or-later, like the upstream engine.
 
 ## Requirements

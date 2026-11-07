@@ -1,0 +1,76 @@
+Parchive 2.0 client version 1.3.3.7 by Yutaka Sawada
+
+Base Directory	: "P:\Fotos de família\"
+Recovery File	: "P:\Fotos de família\fotos.par2"
+CPU thread	: 6 / 12
+CPU cache limit : 128 KB, 1024 KB (16)
+CPU extra	: x64 AVX2 CLMUL
+Memory usage	: Auto (18.8 GB available)
+
+PAR File list :
+         Size :  Filename
+         5648 : "fotos.par2"
+      3047240 : "fotos.vol0+120.par2"
+
+PAR File total size	: 3052888
+PAR File possible count	: 2
+
+Recovery Set ID		: BA3087F413BAE98748EC576738C53298
+Input File Slice size	: 25000
+Input File total count	: 3
+Recovery Set file count : 3
+Creator : par2j v1.3.3
+
+Input File list      :
+         Size  Slice :  Filename
+      2000000     80 : "viagem\ônibus.jpg"
+      2000000     80 : "aniversário.jpg"
+      2000000     80 : "praia 01.jpg"
+
+Input File total size	: 6000000
+Input File Slice count	: 240
+
+Loading PAR File       :
+ Packet Slice Status   :  Filename
+      8     0 Good     : "fotos.par2"
+120     170   120 Good     : "fotos.vol0+120.par2"
+
+Recovery Slice count	: 120
+Recovery Slice found	: 120
+
+Verifying Input File   :
+         Size Status   :  Filename
+80             = Complete : "viagem\ônibus.jpg"
+            - Missing  : "aniversário.jpg"
+            - Missing  : "praia 01.jpg"
+
+Complete file count	: 1
+
+Searching misnamed file: 2
+         Size Status   :  Filename
+
+Misnamed file count	: 0
+Damaged file count	: 0
+Missing file count	: 2
+
+Input File Slice found	: 80
+
+Finding available slice:
+         Size Status   :  Filename
+
+Input File Slice found	: 80
+
+Comparing lost slice	: 160 within 80
+Null byte slice count	: 0
+Reversible slice count	: 0
+Duplicate slice count	: 0
+
+Counting available slice:
+ Avail /  Slice :  Filename
+     0 /     80 : "aniversário.jpg"
+     0 /     80 : "praia 01.jpg"
+
+Input File Slice avail	: 80
+Input File Slice lost	: 160
+
+Need 40 more slice(s) to repair 2 file(s)

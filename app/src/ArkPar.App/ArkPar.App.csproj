@@ -23,4 +23,14 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArkPar.Engine\ArkPar.Engine.csproj" />
+  </ItemGroup>
+
+  <!-- The engine ships next to the app, where EngineRun.DefaultEnginePath looks for it.
+       It is built by app/build-engine.ps1 (a C++ project), not by dotnet. -->
+  <ItemGroup Condition="Exists('$(ArkParEngineDir)par2j64.exe')">
+    <None Include="$(ArkParEngineDir)par2j64.exe" Link="engine\par2j64.exe" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

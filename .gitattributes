@@ -11,6 +11,9 @@
 /.gitattributes text eol=lf
 /.gitignore text eol=lf
 
+# Engine output captured byte for byte (CRLF and bare CR progress updates): never normalized.
+/app/tests/ArkPar.Tests/Engine/Fixtures/** -text
+
 # Binary assets anywhere under our folders.
 *.png binary
 *.ico binary

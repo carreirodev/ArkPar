@@ -1,0 +1,32 @@
+Parchive 2.0 client version 1.3.3.7 by Yutaka Sawada
+
+Base Directory	: "P:\Fotos de família\"
+Recovery File	: "P:\Fotos de família\fotos.par2"
+CPU thread	: 6 / 12
+CPU cache limit : 128 KB, 1024 KB (16)
+CPU extra	: x64 AVX2 CLMUL
+Memory usage	: Auto (18.8 GB available)
+
+PAR File list :
+         Size :  Filename
+         5648 : "fotos.par2"
+
+PAR File total size	: 5648
+PAR File possible count	: 1
+
+Recovery Set ID		: BA3087F413BAE98748EC576738C53298
+Input File Slice size	: 25000
+Input File total count	: 3
+Recovery Set file count : 3
+Creator : par2j v1.3.3
+
+Input File list	:
+         Size  Slice :  Filename
+      2000000     80 : "praia 01.jpg"
+      2000000     80 : "viagem/ônibus.jpg"
+      2000000     80 : "aniversário.jpg"
+
+Input File total size	: 6005648
+Input File Slice count	: 240
+
+Listed successfully

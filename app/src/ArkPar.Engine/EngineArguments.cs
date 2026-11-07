@@ -21,6 +21,8 @@ internal static class EngineArguments
     // falls back to the CPU by itself (rs_encode.c and rs_decode.c, after init_OpenCL fails).
     internal const string CpuAndGpu = "/lc256";
 
+    private const string RecycleDamagedFiles = "/br";
+
     public static IReadOnlyList<string> For(EngineCommand command, string runDirectory) => command switch
     {
         // The photos go in a list file, not on the command line, which Windows caps at 32,767 characters.
@@ -35,7 +37,9 @@ internal static class EngineArguments
         // The JSON result goes in the run folder: by default the engine writes it next to itself,
         // which is read-only once the app is installed.
         EngineCommand.Verify verify => ["v", Utf8Output, CpuAndGpu, "/vd" + runDirectory, "/w", verify.RecoveryFile],
-        EngineCommand.Repair repair => ["r", Utf8Output, CpuAndGpu, "/vd" + runDirectory, "/w", repair.RecoveryFile],
+        // /br: each damaged photo a repair replaces goes to the Recycle Bin, so a failed repair loses nothing
+        // (the engine's manual calls a backup "important, because this application may contain bugs").
+        EngineCommand.Repair repair => ["r", Utf8Output, CpuAndGpu, "/vd" + runDirectory, "/w", RecycleDamagedFiles, repair.RecoveryFile],
         EngineCommand.List list => ["l", Utf8Output, list.RecoveryFile],
         _ => throw new ArgumentOutOfRangeException(nameof(command), command, "Unknown engine command."),
     };

@@ -16,6 +16,10 @@ _Avoid_: PAR set, parity set, backup
 One `.par2` file belonging to a recovery set.
 _Avoid_: parity file, volume
 
+**Recovery block**:
+One unit of repair data inside the recovery files. A repair uses one recovery block for each block of the protected files that was lost, so it is possible while the blocks lost do not outnumber the recovery blocks available.
+_Avoid_: slice, parity block
+
 **Creation mode**:
 How a selection is split into recovery sets; the user picks one each time, with an explanation on screen. The modes are single set, per subfolder, per folder and per file.
 _Avoid_: recursion, batch mode

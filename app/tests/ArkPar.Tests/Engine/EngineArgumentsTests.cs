@@ -36,9 +36,11 @@ public sealed class EngineArgumentsTests
     [TestMethod]
     public void VerifyAndRepairWriteTheirJsonResultInTheRunFolder()
     {
-        string[] options = ["/uo", "/lc256", @"/vdC:\Temp\ArkPar\run1", "/w", RecoveryFile];
-        string[] verify = ["v", .. options];
-        string[] repair = ["r", .. options];
+        string[] options = ["/uo", "/lc256", @"/vdC:\Temp\ArkPar\run1", "/w"];
+        string[] verify = ["v", .. options, RecoveryFile];
+
+        // A repair sends each damaged photo it replaces to the Recycle Bin, so a failed repair loses nothing.
+        string[] repair = ["r", .. options, "/br", RecoveryFile];
 
         CollectionAssert.AreEqual(verify, EngineArguments.For(new EngineCommand.Verify(RecoveryFile), RunDirectory).ToArray());
         CollectionAssert.AreEqual(repair, EngineArguments.For(new EngineCommand.Repair(RecoveryFile), RunDirectory).ToArray());

@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ArkPar.Engine\ArkPar.Engine.csproj" />
+    <ProjectReference Include="..\..\src\ArkPar.Screens\ArkPar.Screens.csproj" />
   </ItemGroup>
 
   <!-- Real engine output and JSON results, captured byte for byte (see Engine/Fixtures/README.md). -->

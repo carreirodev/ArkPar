@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ArkPar.Engine\ArkPar.Engine.csproj" />
+    <ProjectReference Include="..\ArkPar.Screens\ArkPar.Screens.csproj" />
   </ItemGroup>
 
   <!-- The engine ships next to the app, where EngineRun.DefaultEnginePath looks for it.

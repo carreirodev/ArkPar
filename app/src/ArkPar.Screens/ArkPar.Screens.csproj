@@ -1,0 +1,17 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- What each screen shows and does, without WinUI, so the tests can drive a screen directly.
+     The app only lays it out (bindings) and adds what needs Windows itself (pickers, thumbnails). -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>ArkPar.Screens</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArkPar.Engine\ArkPar.Engine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ArkPar.Tests" />
+  </ItemGroup>
+</Project>

@@ -14,7 +14,7 @@ namespace ArkPar.Engine;
 /// about once a second, so a pause or cancel takes effect within about a second. A pause stops the
 /// task, but the calculation block already under way finishes first.
 /// </remarks>
-public sealed class EngineRun : IDisposable
+public sealed class EngineRun : IEngineRun
 {
     /// <summary>How long a canceled engine gets to stop by itself before it is ended at once.</summary>
     internal static readonly TimeSpan DefaultCancelGracePeriod = TimeSpan.FromSeconds(5);
@@ -131,10 +131,10 @@ public sealed class EngineRun : IDisposable
     }
 
     /// <summary>
-    /// Sends the pause or resume key unless the task is already in that state, canceled or finished.
+    /// Pauses or resumes, sending the key unless the task is already in that state, canceled or finished.
     /// The engine prints " Pause" without flushing it, so the state is tracked here, not read back.
     /// </summary>
-    private void SetPaused(bool paused)
+    public void SetPaused(bool paused)
     {
         lock (_lock)
         {
@@ -210,7 +210,7 @@ public sealed class EngineRun : IDisposable
         }
 
         var report = Command is EngineCommand.Verify or EngineCommand.Repair && outcome is not (EngineOutcome.Error or EngineOutcome.Canceled)
-            ? VerificationReport.Load(EngineArguments.ReportPath(Command.RecoveryFile, runDirectory))
+            ? VerificationReport.Load(EngineArguments.ReportPath(Command.RecoveryFile, runDirectory), _output.Text)
             : null;
         return new EngineResult(outcome, exitCode, report, _output.Text);
     }

@@ -16,7 +16,6 @@ public sealed partial class MainWindow : Window
     private const int Height = 860;
 
     private readonly TaskNotices _notices;
-    private bool _isActive = true;
 
     public MainWindow()
     {
@@ -36,8 +35,7 @@ public sealed partial class MainWindow : Window
 
         // A task that ends while the user looks elsewhere (minimized, another app in front) is told by a notification.
         // TryEnqueue fails only once the window is closing, when there is nothing left to bring back.
-        _notices = new TaskNotices(() => DispatcherQueue.TryEnqueue(BringBack));
-        Activated += (_, args) => _isActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        _notices = new TaskNotices(() => DispatcherQueue.TryEnqueue(BringBack), App.Settings.ShowNotificationsUnavailable);
         Create.Screen.Finished += OnTaskFinished;
         Verify.Screen.Finished += OnTaskFinished;
         Verify.FolderVerification.Finished += OnTaskFinished;
@@ -73,7 +71,7 @@ public sealed partial class MainWindow : Window
 
     private void OnTaskFinished(object? sender, Banner banner)
     {
-        if (!_isActive)
+        if (!Foreground.Is(Win32Interop.GetWindowFromWindowId(AppWindow.Id)))
         {
             _notices.Show(banner);
         }

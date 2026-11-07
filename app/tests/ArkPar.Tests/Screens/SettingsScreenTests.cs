@@ -245,6 +245,17 @@ public sealed class SettingsScreenTests
         Assert.AreEqual("4 núcleos", first.Threads.Text);
     }
 
+    [TestMethod]
+    public void SaysWhenWindowsRefusesNotifications()
+    {
+        var screen = NewScreen();
+
+        screen.ShowNotificationsUnavailable(new NotSupportedException("No notifications here."));
+
+        Assert.AreEqual(new Banner(BannerKind.Warning, "O Windows não deixou o ArkPar mostrar notificações.", "O fim de cada tarefa aparece só na janela do ArkPar."), screen.Banner);
+        Assert.Contains("No notifications here.", screen.Details!);
+    }
+
     private SettingsScreen NewScreen(int processorCount = 8) =>
         new(_file, new Par2Association(_user, App), processorCount, () => _explorerTold++);
 }

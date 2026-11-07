@@ -112,6 +112,13 @@ public sealed class SettingsScreen : Observable
         AnnounceAll();
     }
 
+    /// <summary>Windows refused ArkPar's notifications: the end of each task shows only in its window.</summary>
+    public void ShowNotificationsUnavailable(Exception failure)
+    {
+        Banner = new Banner(BannerKind.Warning, "O Windows não deixou o ArkPar mostrar notificações.", "O fim de cada tarefa aparece só na janela do ArkPar.");
+        Details = failure.ToString();
+    }
+
     /// <summary>The answer to the question asked on the first run.</summary>
     public void AnswerPar2Question(bool open) => SetPar2Files(open);
 

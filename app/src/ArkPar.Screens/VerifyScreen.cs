@@ -69,7 +69,20 @@ public sealed class VerifyScreen : Observable, IDisposable
     public string ActivityText { get => _activityText; private set => Set(ref _activityText, value); }
 
     /// <summary>How far the current activity is, from 0 to 100; null before the engine reports any.</summary>
-    public double? Percent { get => _percent; private set => Set(ref _percent, value); }
+    public double? Percent
+    {
+        get => _percent;
+        private set
+        {
+            if (Set(ref _percent, value))
+            {
+                Announce(nameof(IsPercentUnknown));
+            }
+        }
+    }
+
+    /// <summary>No percentage yet: the bar moves on its own.</summary>
+    public bool IsPercentUnknown => Percent is null;
 
     public bool IsPaused
     {
@@ -86,7 +99,19 @@ public sealed class VerifyScreen : Observable, IDisposable
     public string PauseText => IsPaused ? "Continuar" : "Pausar";
 
     /// <summary>The result's headline; null while running and after a cancel.</summary>
-    public Banner? Banner { get => _banner; private set => Set(ref _banner, value); }
+    public Banner? Banner
+    {
+        get => _banner;
+        private set
+        {
+            if (Set(ref _banner, value))
+            {
+                Announce(nameof(HasBanner));
+            }
+        }
+    }
+
+    public bool HasBanner => Banner is not null;
 
     public bool CanRepair { get => _canRepair; private set => Set(ref _canRepair, value); }
 
@@ -355,6 +380,8 @@ public sealed class VerifyScreen : Observable, IDisposable
     /// <summary>The engine's activity, in the user's words: its English phrases, or the file it is reading.</summary>
     private static string ActivityTextOf(string activity) => activity switch
     {
+        EngineProgress.CheckingFiles => "Conferindo os arquivos",
+
         // print_progress_text in source/par2j (reedsolomon.c, rs_decode.c, repair.c).
         "Computing matrix" => "Preparando o reparo",
         "Recovering slice" or "Restoring slice" => "Recriando as partes perdidas",

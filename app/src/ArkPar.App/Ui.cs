@@ -12,8 +12,6 @@ internal static class Ui
 {
     public static Visibility VisibleUnless(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
-    public static bool IsSet(object? value) => value is not null;
-
     public static Visibility VisibleIfSet(object? value) => value is null ? Visibility.Collapsed : Visibility.Visible;
 
     public static Visibility VisibleIfText(string? text) => string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
@@ -24,10 +22,10 @@ internal static class Ui
 
     public static string NumberOf(int count) => count.ToString("N0", PtBrazil.Culture);
 
+    // While Percent is null the bar is indeterminate (IsPercentUnknown), so the stale value never shows.
     public static double PercentOf(double? percent) => percent ?? 0;
 
-    public static bool IsUnknown(double? percent) => percent is null;
-
+    // While Banner is null the bar is closed (HasBanner), so a stale severity never shows.
     public static InfoBarSeverity SeverityOf(Banner? banner) => banner?.Kind switch
     {
         BannerKind.Success => InfoBarSeverity.Success,

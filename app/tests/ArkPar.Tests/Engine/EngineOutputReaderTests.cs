@@ -8,6 +8,9 @@ namespace ArkPar.Tests.Engine;
 [TestClass]
 public sealed class EngineOutputReaderTests
 {
+    // Three files checked one after the other, in percent of all of them.
+    private static readonly double[] OneThirdSteps = [0.0, 33.3, 66.7, 100.0];
+
     [TestMethod]
     public void CreateReportsEachProgressUpdateWithItsActivity()
     {
@@ -22,7 +25,7 @@ public sealed class EngineOutputReaderTests
     public void RepairReportsBothRepairActivitiesAndIgnoresFileCounters()
     {
         // repair.txt also has counters such as "120 \r" and "159 \r" while files are scanned: those are not percentages.
-        var progress = Read("repair.txt");
+        var progress = Read("repair.txt").Where(p => p.Activity != EngineProgress.CheckingFiles).ToList();
 
         CollectionAssert.AreEqual(
             new[]
@@ -45,9 +48,48 @@ public sealed class EngineOutputReaderTests
     }
 
     [TestMethod]
-    public void VerifyWithoutPercentagesReportsNothing()
+    public void CheckingFilesReportsEachFileDoneOutOfAll()
     {
-        Assert.IsEmpty(Read("verify-damaged.txt"));
+        // Photos read in under a second print no percentage, only one result line each:
+        // "- Missing  : ...", "      2000000       20 : ..." (3 files, "Input File total count : 3").
+        var progress = Read("verify-damaged.txt");
+
+        Assert.IsTrue(progress.All(p => p.Activity == EngineProgress.CheckingFiles));
+        CollectionAssert.AreEqual(OneThirdSteps, progress.Select(p => Math.Round(p.Percent, 1)).ToArray());
+    }
+
+    [TestMethod]
+    public void RepairChecksTheFilesAgainFirst()
+    {
+        var progress = Read("repair.txt");
+
+        CollectionAssert.AreEqual(
+            OneThirdSteps,
+            progress.TakeWhile(p => p.Activity == EngineProgress.CheckingFiles).Select(p => Math.Round(p.Percent, 1)).ToArray());
+    }
+
+    [TestMethod]
+    public void BigFileProgressCountsTowardsAllTheFiles()
+    {
+        // Of 4 files, the first is done and the second, big enough to print percentages, is half read.
+        var progress = new RecordedProgress();
+        var reader = new EngineOutputReader(progress);
+
+        reader.Write(Encoding.UTF8.GetBytes(
+            "Input File total count\t: 4\r\nVerifying Input File   :\r\n         Size Status   :  Filename\r\n" +
+            "            = Complete : \"a.jpg\"\r\n  0.0% : \"filme.mp4\"\r 50.0%\r"));
+
+        Assert.AreEqual(new EngineProgress("filme.mp4", 37.5), progress.Reports[^1]);
+    }
+
+    [TestMethod]
+    public void ResultLinesAfterTheCheckAreNotCounted()
+    {
+        // "Searching misnamed file" lists files too, after "Complete file count": the check is over by then.
+        var progress = Read("verify-damaged.txt");
+
+        Assert.AreEqual(100.0, progress[^1].Percent);
+        Assert.HasCount(4, progress);
     }
 
     [TestMethod]

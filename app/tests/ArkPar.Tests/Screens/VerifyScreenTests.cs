@@ -37,6 +37,7 @@ public sealed class VerifyScreenTests : IDisposable
         Assert.AreEqual(RecoveryFile, _screen.RecoveryFile);
         Assert.IsTrue(_screen.IsRunning);
         Assert.IsNull(_screen.Percent, "No progress yet: the bar moves on its own.");
+        Assert.IsTrue(_screen.IsPercentUnknown);
         Assert.AreEqual("Lendo o arquivo de recuperação", _screen.ActivityText);
     }
 
@@ -48,7 +49,19 @@ public sealed class VerifyScreenTests : IDisposable
         _engine.Last.Report("praia 01.jpg", 42.5);
 
         Assert.AreEqual(42.5, _screen.Percent);
+        Assert.IsFalse(_screen.IsPercentUnknown);
         Assert.AreEqual("Lendo praia 01.jpg", _screen.ActivityText);
+    }
+
+    [TestMethod]
+    public void ProgressCountsTheFilesChecked()
+    {
+        _ = _screen.VerifyAsync(RecoveryFile);
+
+        _engine.Last.Report(EngineProgress.CheckingFiles, 25);
+
+        Assert.AreEqual(25, _screen.Percent);
+        Assert.AreEqual("Conferindo os arquivos", _screen.ActivityText);
     }
 
     [TestMethod]
@@ -147,6 +160,7 @@ public sealed class VerifyScreenTests : IDisposable
         Assert.AreEqual(VerifyStage.Canceled, _screen.Stage);
         Assert.AreEqual("Verificação cancelada", _screen.Heading);
         Assert.IsNull(_screen.Banner);
+        Assert.IsFalse(_screen.HasBanner);
         Assert.IsNull(_screen.Counts);
         Assert.IsTrue(_engine.Last.Disposed);
     }

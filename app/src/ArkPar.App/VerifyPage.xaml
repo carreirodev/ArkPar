@@ -24,6 +24,10 @@
         </Style>
     </UserControl.Resources>
 
+    <!-- x:Bind does not call a function whose argument is null: it applies FallbackValue instead, which at
+         run time converts only some types (Visibility, text). So a function over a value that can be null has a
+         Visibility or text FallbackValue, and the others bind to a non-null property (HasBanner, IsPercentUnknown). -->
+
     <!-- The content sits on a slightly lighter layer, rounded at the top left, over the window's Mica. -->
     <Border
         Background="{ThemeResource LayerFillColorDefaultBrush}"
@@ -37,7 +41,7 @@
                 <StackPanel Spacing="2">
                     <TextBlock
                         Text="{x:Bind Screen.RecoveryFile, Mode=OneWay}"
-                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay}"
+                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay, FallbackValue=Collapsed}"
                         FontFamily="Cascadia Mono, Consolas"
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
@@ -51,7 +55,7 @@
                     <Button
                         Content="Verificar de novo"
                         Click="OnVerifyAgain"
-                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay}" />
+                        Visibility="{x:Bind local:Ui.VisibleIfText(Screen.RecoveryFile), Mode=OneWay, FallbackValue=Collapsed}" />
                 </StackPanel>
 
                 <!-- While the engine works. -->
@@ -61,7 +65,7 @@
                         <ProgressBar
                             Maximum="100"
                             Value="{x:Bind local:Ui.PercentOf(Screen.Percent), Mode=OneWay}"
-                            IsIndeterminate="{x:Bind local:Ui.IsUnknown(Screen.Percent), Mode=OneWay}"
+                            IsIndeterminate="{x:Bind Screen.IsPercentUnknown, Mode=OneWay}"
                             ShowPaused="{x:Bind Screen.IsPaused, Mode=OneWay}" />
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
                             <Button Content="{x:Bind Screen.PauseText, Mode=OneWay}" Click="OnTogglePause" />
@@ -72,7 +76,7 @@
 
                 <!-- The result's headline, with Reparar when the set can fix the files. -->
                 <InfoBar
-                    IsOpen="{x:Bind local:Ui.IsSet(Screen.Banner), Mode=OneWay}"
+                    IsOpen="{x:Bind Screen.HasBanner, Mode=OneWay}"
                     IsClosable="False"
                     Severity="{x:Bind local:Ui.SeverityOf(Screen.Banner), Mode=OneWay}"
                     Title="{x:Bind Screen.Banner.Title, Mode=OneWay, FallbackValue=''}"
@@ -87,7 +91,7 @@
                 </InfoBar>
 
                 <!-- How many files are in each state. -->
-                <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfSet(Screen.Counts), Mode=OneWay}">
+                <Border Style="{StaticResource Card}" Visibility="{x:Bind local:Ui.VisibleIfSet(Screen.Counts), Mode=OneWay, FallbackValue=Collapsed}">
                     <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -167,7 +171,7 @@
                     Header="Detalhes técnicos"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Stretch"
-                    Visibility="{x:Bind local:Ui.VisibleIfText(Screen.Details), Mode=OneWay}">
+                    Visibility="{x:Bind local:Ui.VisibleIfText(Screen.Details), Mode=OneWay, FallbackValue=Collapsed}">
                     <TextBlock
                         Text="{x:Bind Screen.Details, Mode=OneWay}"
                         FontFamily="Cascadia Mono, Consolas"

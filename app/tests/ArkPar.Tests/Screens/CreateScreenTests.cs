@@ -239,7 +239,7 @@ public sealed class CreateScreenTests : IDisposable
         Assert.HasCount(2, _trial.Last.Create.SourceFiles, "The replaced set's files are not protected by the new one.");
 
         var creating = _screen.CreateAsync();
-        await WaitUntilAsync(() => _engine.Runs.Count == 1);
+        await WaitUntilAsync(() => _screen.CanControl);
 
         CollectionAssert.AreEqual(new[] { replacedIndex, replacedRecoveryFile }, _recycled);
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
@@ -294,8 +294,7 @@ public sealed class CreateScreenTests : IDisposable
         Assert.AreEqual("Levando o conjunto anterior para a Lixeira", screen.ActivityText);
         Assert.IsFalse(screen.CanControl);
         recycling.Set();
-        await WaitUntilAsync(() => _engine.Runs.Count == 1);
-        Assert.IsTrue(screen.CanControl);
+        await WaitUntilAsync(() => screen.CanControl);
 
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await creating;
@@ -345,7 +344,7 @@ public sealed class CreateScreenTests : IDisposable
         await ReadyAsync(screen);
         Assert.IsTrue(screen.ReplacesExisting);
         var creating = screen.CreateAsync();
-        await WaitUntilAsync(() => _engine.Runs.Count == 1);
+        await WaitUntilAsync(() => screen.CanControl);
 
         _engine.Last.Fail(new InvalidOperationException("The engine's output could not be read."));
         await creating;
@@ -353,6 +352,48 @@ public sealed class CreateScreenTests : IDisposable
         Assert.AreEqual(CreateStage.Failed, screen.Stage);
         Assert.IsFalse(screen.ReplacesExisting, "The replaced set went to the Recycle Bin.");
         Assert.AreEqual("Criar arquivos de recuperação", screen.CreateText);
+    }
+
+    [TestMethod]
+    public async Task WithoutARecycleBinTheReplacedSetWaitsAsideUntilTheNewOneIsMade()
+    {
+        var (index, recoveryFile) = WriteSetOfTheSameName();
+        using var screen = new CreateScreen(_engine.Start, _trial.RunAsync, _recycled.AddRange, hasRecycleBin: _ => false);
+        await ReadyAsync(screen);
+
+        Assert.AreEqual("Já existe um conjunto com este nome nesta pasta. Ele fica guardado ao lado até o novo ficar pronto, e então é apagado, porque este disco não tem Lixeira.", screen.ReplaceWarning);
+        var creating = screen.CreateAsync();
+        await WaitUntilAsync(() => screen.CanControl);
+
+        Assert.IsFalse(File.Exists(index), "Set aside while the engine works.");
+        Assert.IsFalse(File.Exists(recoveryFile));
+        Assert.IsEmpty(_recycled);
+        File.WriteAllBytes(index, new byte[20]);
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await creating;
+
+        Assert.AreEqual(CreateStage.Created, screen.Stage);
+        CollectionAssert.AreEqual(new[] { index }, Directory.GetFiles(_trip, "07 - Viagem Bahia*"), "Only the new set is left.");
+    }
+
+    [TestMethod]
+    public async Task WithoutARecycleBinACanceledCreateGivesTheReplacedSetBack()
+    {
+        var (index, recoveryFile) = WriteSetOfTheSameName();
+        using var screen = new CreateScreen(_engine.Start, _trial.RunAsync, _recycled.AddRange, hasRecycleBin: _ => false);
+        await ReadyAsync(screen);
+        var creating = screen.CreateAsync();
+        await WaitUntilAsync(() => screen.CanControl);
+
+        File.WriteAllBytes(index, new byte[20]);
+        File.WriteAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.vol0+24.par2"), new byte[20]);
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, null, "Cancel"));
+        await creating;
+
+        CollectionAssert.AreEquivalent(new[] { index, recoveryFile }, Directory.GetFiles(_trip, "07 - Viagem Bahia*"));
+        Assert.HasCount(10, File.ReadAllBytes(index), "The set from before, not the half-written one.");
+        Assert.AreEqual(new Banner(BannerKind.Warning, "Nenhum arquivo de recuperação foi gravado.", "O conjunto anterior continua na pasta."), screen.Banner);
+        Assert.IsTrue(screen.ReplacesExisting);
     }
 
     [TestMethod]
@@ -387,10 +428,13 @@ public sealed class CreateScreenTests : IDisposable
         Assert.IsNull(_screen.Details);
     }
 
-    private void WriteSetOfTheSameName()
+    private (string Index, string RecoveryFile) WriteSetOfTheSameName()
     {
-        File.WriteAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.par2"), new byte[10]);
-        File.WriteAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.vol0+19.par2"), new byte[10]);
+        var index = Path.Combine(_trip, "07 - Viagem Bahia.par2");
+        var recoveryFile = Path.Combine(_trip, "07 - Viagem Bahia.vol0+19.par2");
+        File.WriteAllBytes(index, new byte[10]);
+        File.WriteAllBytes(recoveryFile, new byte[10]);
+        return (index, recoveryFile);
     }
 
     private Task ReadyAsync() => ReadyAsync(_screen);

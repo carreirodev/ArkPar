@@ -46,16 +46,24 @@ public sealed class CreateScreen : Observable, IDisposable
 
     private const string Automatic = "Automático";
 
+    /// <summary>Added to the names of a replaced set while it waits aside (on a drive without a Recycle Bin).</summary>
+    private const string AsideSuffix = ".anterior";
+
     /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
     private readonly Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> _startEngine;
     private readonly Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> _runTrial;
     private readonly Action<IReadOnlyList<string>> _recycle;
+    private readonly Func<string, bool> _hasRecycleBin;
     private IEngineRun? _run;
     private EngineCommand.Create? _creating;
     private int _runNumber;
     private bool _disposed;
+
+    // What the create under way did with the set it replaces: sent it to the Recycle Bin, or set it aside.
+    private bool _replacedToRecycleBin;
+    private List<(string Original, string Aside)>? _setAside;
 
     // The estimate: one trial at a time; a change while one runs asks for one more, with the latest settings.
     private bool _estimateAgain;
@@ -84,15 +92,18 @@ public sealed class CreateScreen : Observable, IDisposable
 
     /// <param name="startEngine">Starts an engine task (<see cref="EngineRun.Start"/> in the app).</param>
     /// <param name="runTrial">Runs the engine's trial of a create (<see cref="EngineTrial.RunAsync"/> in the app).</param>
-    /// <param name="recycle">Sends files to the Recycle Bin (or deletes them on a drive that has none).</param>
+    /// <param name="recycle">Sends files to the Recycle Bin.</param>
+    /// <param name="hasRecycleBin">Whether a folder's drive has a Recycle Bin; by default, only fixed disks do.</param>
     public CreateScreen(
         Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> startEngine,
         Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> runTrial,
-        Action<IReadOnlyList<string>> recycle)
+        Action<IReadOnlyList<string>> recycle,
+        Func<string, bool>? hasRecycleBin = null)
     {
         _startEngine = startEngine;
         _runTrial = runTrial;
         _recycle = recycle;
+        _hasRecycleBin = hasRecycleBin ?? DriveHasRecycleBin;
         _blockSize = BlockSizes[0];
         _memory = MemoryLimits[0];
     }
@@ -301,7 +312,9 @@ public sealed class CreateScreen : Observable, IDisposable
     public string? ReplaceWarning => !ReplacesExisting
         ? null
         : "Já existe um conjunto com este nome nesta pasta. "
-            + (HasRecycleBin ? "Os arquivos dele irão para a Lixeira." : "Os arquivos dele serão apagados, porque este disco não tem Lixeira.");
+            + (HasRecycleBin
+                ? "Os arquivos dele irão para a Lixeira."
+                : "Ele fica guardado ao lado até o novo ficar pronto, e então é apagado, porque este disco não tem Lixeira.");
 
     /// <summary>Only once the engine has worked out the sizes for the current settings, so what is shown is what is made.</summary>
     public bool CanCreate =>
@@ -385,10 +398,10 @@ public sealed class CreateScreen : Observable, IDisposable
     /// Whether the files of a set replaced in this folder go to the Recycle Bin: Windows keeps one only on
     /// fixed disks, and deletes at once on USB sticks, memory cards and network folders.
     /// </summary>
-    private bool HasRecycleBin =>
-        Selection.BaseDirectory is { } folder
-        && !folder.StartsWith(@"\\", StringComparison.Ordinal)
-        && new DriveInfo(folder).DriveType == DriveType.Fixed;
+    private bool HasRecycleBin => Selection.BaseDirectory is { } folder && _hasRecycleBin(folder);
+
+    private static bool DriveHasRecycleBin(string folder) =>
+        !folder.StartsWith(@"\\", StringComparison.Ordinal) && new DriveInfo(folder).DriveType == DriveType.Fixed;
 
     /// <summary>
     /// Adds <paramref name="paths"/> (files or folders) to what the set covers, reading them from disk off the
@@ -462,12 +475,14 @@ public sealed class CreateScreen : Observable, IDisposable
         var replaced = Selection.ExistingRecoveryFiles();
         var hasRecycleBin = HasRecycleBin;
         var runNumber = ++_runNumber;
+        _replacedToRecycleBin = false;
+        _setAside = null;
         StopEstimate();
         Stage = CreateStage.Creating;
         Heading = "Criando";
         ActivityText = replaced.Count == 0 ? "Preparando"
             : hasRecycleBin ? "Levando o conjunto anterior para a Lixeira"
-            : "Apagando o conjunto anterior";
+            : "Guardando o conjunto anterior";
         Percent = null;
         IsPaused = false;
         Banner = null;
@@ -475,18 +490,26 @@ public sealed class CreateScreen : Observable, IDisposable
 
         try
         {
-            if (replaced.Count > 0)
+            // The engine would write over the index but leave the replaced set's recovery files beside the new ones.
+            if (replaced.Count > 0 && hasRecycleBin)
             {
-                // The engine would write over the index but leave the replaced set's recovery files beside the new ones.
                 await Task.Run(() => _recycle(replaced)).ConfigureAwait(true);
-                if (_disposed)
-                {
-                    // The window closed meanwhile: start nothing that would outlive it.
-                    return;
-                }
-
-                ActivityText = "Preparando";
+                _replacedToRecycleBin = true;
             }
+            else if (replaced.Count > 0)
+            {
+                // No Recycle Bin on this drive: the set waits aside, so a create that does not finish loses nothing.
+                _setAside = await Task.Run(() => SetAside(replaced)).ConfigureAwait(true);
+            }
+
+            if (_disposed)
+            {
+                // The window closed meanwhile: start nothing that would outlive it, and give the set back.
+                RestoreSetAside();
+                return;
+            }
+
+            ActivityText = "Preparando";
 
             _creating = create;
             Run = _startEngine(create, new UiProgress<EngineProgress>(progress =>
@@ -501,16 +524,15 @@ public sealed class CreateScreen : Observable, IDisposable
         }
         catch (Exception failure)
         {
-            Fail(replaced.Count > 0 && Run is null
+            var movingAway = replaced.Count > 0 && !_replacedToRecycleBin && _setAside is null;
+            var (note, settleFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
+            Fail(movingAway
                     ? new Banner(BannerKind.Error, "Não foi possível tirar o conjunto anterior da pasta.", "Confira se algum dos arquivos dele está aberto em outro programa.")
-                    : new Banner(BannerKind.Error, "Não foi possível iniciar a criação.", "O ArkPar pode estar instalado de forma incompleta."),
-                failure.ToString());
+                    : new Banner(BannerKind.Error, "Não foi possível iniciar a criação.", Join("O ArkPar pode estar instalado de forma incompleta.", note, " ")),
+                Join(failure.ToString(), settleFailure));
             return;
         }
 
-        var replacedNote = replaced.Count == 0 ? null
-            : hasRecycleBin ? "O conjunto anterior está na Lixeira, se quiser recuperá-lo."
-            : "O conjunto anterior foi apagado; crie o conjunto de novo para proteger os arquivos.";
         EngineResult result;
         try
         {
@@ -521,13 +543,14 @@ public sealed class CreateScreen : Observable, IDisposable
             // Never leave the screen stuck on "Criando": whatever failed is shown, with its details.
             EndRun();
             var leftover = await RemovePartialFilesAsync(create).ConfigureAwait(true);
-            Fail(new Banner(BannerKind.Error, "A criação terminou de forma inesperada.", Join(replacedNote, LeftoverText(create, leftover), " ")),
-                Join(failure.ToString(), leftover));
+            var (note, settleFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
+            Fail(new Banner(BannerKind.Error, "A criação terminou de forma inesperada.", Join(note, LeftoverText(create, leftover), " ")),
+                Join(Join(failure.ToString(), leftover), settleFailure));
             return;
         }
 
         EndRun();
-        await ShowAsync(result, create, replacedNote).ConfigureAwait(true);
+        await ShowAsync(result, create).ConfigureAwait(true);
     }
 
     public void TogglePause()
@@ -562,6 +585,7 @@ public sealed class CreateScreen : Observable, IDisposable
         if (run.Completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(KillWait))
         {
             DeletePartialFiles(create);
+            RestoreSetAside();
         }
     }
 
@@ -573,31 +597,44 @@ public sealed class CreateScreen : Observable, IDisposable
         IsPaused = false;
     }
 
-    private async Task ShowAsync(EngineResult result, EngineCommand.Create create, string? replacedNote)
+    private async Task ShowAsync(EngineResult result, EngineCommand.Create create)
     {
         if (result.Outcome == EngineOutcome.Completed)
         {
-            // The set is made: nothing from here on may remove it.
+            // The set is made: nothing from here on may remove it, and a failure here only changes what is shown.
             Stage = CreateStage.Created;
             Heading = "Conjunto criado";
+            var (note, settleFailure) = await SettleReplacedSetAsync(created: true).ConfigureAwait(true);
             CheckForExistingSet();
-            var recoveryFiles = Selection.RecoverySetFiles(create.RecoveryFile);
-            var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
-            Banner = new Banner(
-                BannerKind.Success,
-                $"Os arquivos de recuperação protegem {Selection.Summary}.",
-                $"{PtBrazil.Count(recoveryFiles.Count, "arquivo", "arquivos")} · {SizeText.Of(size)}, em {create.BaseDirectory}");
+            string? made;
+            string? sizeFailure = null;
+            try
+            {
+                var recoveryFiles = Selection.RecoverySetFiles(create.RecoveryFile);
+                var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
+                made = $"{PtBrazil.Count(recoveryFiles.Count, "arquivo", "arquivos")} · {SizeText.Of(size)}, em {create.BaseDirectory}";
+            }
+            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            {
+                // A recovery file moved or locked right after it was made (an antivirus...): the set is still there.
+                made = $"Em {create.BaseDirectory}";
+                sizeFailure = failure.ToString();
+            }
+
+            Banner = new Banner(BannerKind.Success, $"Os arquivos de recuperação protegem {Selection.Summary}.", Join(made, note, " "));
+            Details = Join(sizeFailure, settleFailure);
             return;
         }
 
         var leftover = await RemovePartialFilesAsync(create).ConfigureAwait(true);
+        var (replacedNote, restoreFailure) = await SettleReplacedSetAsync(created: false).ConfigureAwait(true);
         if (result.Outcome == EngineOutcome.Canceled)
         {
             Stage = CreateStage.Canceled;
             Heading = "Criação cancelada";
             CheckForExistingSet();
             Banner = new Banner(BannerKind.Warning, "Nenhum arquivo de recuperação foi gravado.", Join(replacedNote, LeftoverText(create, leftover), " "));
-            Details = leftover;
+            Details = Join(leftover, restoreFailure);
             RequestEstimate();
             return;
         }
@@ -605,7 +642,89 @@ public sealed class CreateScreen : Observable, IDisposable
         Fail(
             new Banner(BannerKind.Error, "O motor não conseguiu criar os arquivos de recuperação.",
                 Join(Join("Confira se há espaço no disco e se a pasta permite gravar.", replacedNote, " "), LeftoverText(create, leftover), " ")),
-            Join(result.Output, leftover));
+            Join(Join(result.Output, leftover), restoreFailure));
+    }
+
+    /// <summary>
+    /// Ends what this create did with the set it replaced. Made: the set waiting aside is deleted. Not made: it is
+    /// given back, or, if it went to the Recycle Bin, the user is told it is there.
+    /// </summary>
+    /// <returns>What to tell the user about that set, and why a step failed, if one did.</returns>
+    private async Task<(string? Note, string? Failure)> SettleReplacedSetAsync(bool created)
+    {
+        if (_setAside is null)
+        {
+            return (_replacedToRecycleBin && !created ? "O conjunto anterior está na Lixeira, se quiser recuperá-lo." : null, null);
+        }
+
+        try
+        {
+            await Task.Run(created ? DeleteSetAside : RestoreSetAside).ConfigureAwait(true);
+            return (created ? null : "O conjunto anterior continua na pasta.", null);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            // Said on screen: the set is still on disk, only under another name.
+            return (created
+                    ? $"O conjunto anterior ficou na pasta com \"{AsideSuffix}\" no fim do nome; pode apagá-lo."
+                    : $"O conjunto anterior ficou com \"{AsideSuffix}\" no fim do nome; tire esse final para usá-lo de novo.",
+                failure.ToString());
+        }
+    }
+
+    /// <summary>Renames <paramref name="files"/> aside, all or none: a move that fails puts back the ones already moved.</summary>
+    private static List<(string Original, string Aside)> SetAside(IReadOnlyList<string> files)
+    {
+        var moved = new List<(string Original, string Aside)>();
+        try
+        {
+            foreach (var file in files)
+            {
+                // Overwrites only what a create that never finished (the app closed hard) left aside before.
+                File.Move(file, file + AsideSuffix, overwrite: true);
+                moved.Add((file, file + AsideSuffix));
+            }
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            foreach (var (original, aside) in moved)
+            {
+                File.Move(aside, original);
+            }
+
+            throw;
+        }
+
+        return moved;
+    }
+
+    /// <summary>Gives the set waiting aside its names back (the half-written new one is already gone).</summary>
+    private void RestoreSetAside()
+    {
+        if (_setAside is not { } aside)
+        {
+            return;
+        }
+
+        _setAside = null;
+        foreach (var (original, asideName) in aside)
+        {
+            File.Move(asideName, original);
+        }
+    }
+
+    private void DeleteSetAside()
+    {
+        if (_setAside is not { } aside)
+        {
+            return;
+        }
+
+        _setAside = null;
+        foreach (var (_, asideName) in aside)
+        {
+            File.Delete(asideName);
+        }
     }
 
     private void Fail(Banner banner, string? details)
@@ -644,7 +763,28 @@ public sealed class CreateScreen : Observable, IDisposable
     {
         foreach (var file in Selection.RecoverySetFiles(create.RecoveryFile))
         {
-            File.Delete(file);
+            DeleteOnceReleased(file);
+        }
+    }
+
+    /// <summary>
+    /// Deletes <paramref name="file"/>, waiting up to about a second for Windows to let go of it: right after
+    /// the engine is ended at once, a file it was writing can still be held for a moment ("access denied").
+    /// </summary>
+    private static void DeleteOnceReleased(string file)
+    {
+        const int Attempts = 20;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Delete(file);
+                return;
+            }
+            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException && attempt < Attempts)
+            {
+                Thread.Sleep(50);
+            }
         }
     }
 

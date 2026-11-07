@@ -8,4 +8,8 @@ namespace ArkPar.Screens;
 public static class PtBrazil
 {
     public static CultureInfo Culture { get; } = CultureInfo.GetCultureInfo("pt-BR");
+
+    /// <summary>A count with its noun, e.g. "1 arquivo", "1.234 arquivos".</summary>
+    public static string Count(int count, string singular, string plural) =>
+        count == 1 ? "1 " + singular : count.ToString("N0", Culture) + " " + plural;
 }

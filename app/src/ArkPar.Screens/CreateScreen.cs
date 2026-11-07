@@ -19,7 +19,7 @@ public enum CreateStage
     Created,
     Canceled,
 
-    /// <summary>The engine could not create the set, or the old set could not be replaced.</summary>
+    /// <summary>The engine could not create the set, or the set it replaces could not be moved away.</summary>
     Failed,
 }
 
@@ -41,24 +41,29 @@ public sealed class CreateScreen : Observable, IDisposable
     public const int MinRedundancy = 1;
     public const int MaxRedundancy = 100;
 
+    /// <summary>The most recovery files the screen lets the user ask for.</summary>
+    public const int MaxRecoveryFiles = 999;
+
     private const string Automatic = "Automático";
 
     /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
     private readonly Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> _startEngine;
-    private readonly Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> _estimate;
+    private readonly Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> _runTrial;
     private readonly Action<IReadOnlyList<string>> _recycle;
     private IEngineRun? _run;
     private EngineCommand.Create? _creating;
     private int _runNumber;
-    private int _readNumber;
+    private bool _disposed;
 
     // The estimate: one trial at a time; a change while one runs asks for one more, with the latest settings.
-    private Task? _estimating;
     private bool _estimateAgain;
     private int _estimateNumber;
     private CancellationTokenSource? _estimateStop;
+
+    // Details shows why the last estimate failed: a later one that works removes it.
+    private bool _detailsFromEstimate;
 
     private CreateStage _stage;
     private Selection _selection = Selection.Empty;
@@ -66,7 +71,7 @@ public sealed class CreateScreen : Observable, IDisposable
     private Choice _blockSize;
     private int? _recoveryFileCount;
     private Choice _memory;
-    private RecoveryEstimate? _estimateResult;
+    private RecoveryEstimate? _estimate;
     private bool _isEstimating;
     private string? _estimateProblem;
     private bool _replacesExisting;
@@ -78,25 +83,25 @@ public sealed class CreateScreen : Observable, IDisposable
     private string? _details;
 
     /// <param name="startEngine">Starts an engine task (<see cref="EngineRun.Start"/> in the app).</param>
-    /// <param name="estimate">Runs the engine's trial of a create (<see cref="EngineTrial.RunAsync"/> in the app).</param>
-    /// <param name="recycle">Sends files to the Recycle Bin (<see cref="RecycleBin.Send"/> in the app).</param>
+    /// <param name="runTrial">Runs the engine's trial of a create (<see cref="EngineTrial.RunAsync"/> in the app).</param>
+    /// <param name="recycle">Sends files to the Recycle Bin (or deletes them on a drive that has none).</param>
     public CreateScreen(
         Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> startEngine,
-        Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> estimate,
+        Func<EngineCommand.Create, CancellationToken, Task<RecoveryEstimate>> runTrial,
         Action<IReadOnlyList<string>> recycle)
     {
         _startEngine = startEngine;
-        _estimate = estimate;
+        _runTrial = runTrial;
         _recycle = recycle;
         _blockSize = BlockSizes[0];
         _memory = MemoryLimits[0];
     }
 
-    /// <summary>The block sizes offered under Avançado. The engine raises one too small for the files.</summary>
+    /// <summary>The block sizes offered under Avançado, in bytes. The engine raises one too small for the files.</summary>
     public static IReadOnlyList<Choice> BlockSizes { get; } =
     [
         new(Automatic, null),
-        .. new[] { 64, 256, 1024, 4096, 16384 }.Select(kb => new Choice(Screens.SizeText.Of(kb * 1024L), kb * 1024)),
+        .. new[] { 64, 256, 1024, 4096, 16384 }.Select(kb => new Choice(SizeText.Of(kb * 1024L), kb * 1024)),
     ];
 
     /// <summary>The memory limits offered under Avançado, in eighths of the free memory (the engine's <c>/m</c>).</summary>
@@ -172,7 +177,7 @@ public sealed class CreateScreen : Observable, IDisposable
     public string? RecoveryFile => Selection.RecoveryFile;
 
     /// <summary>The folder the recovery files go in, by name.</summary>
-    public string SaveIn => Selection.BaseDirectory is { } folder ? Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } name ? name : folder : "";
+    public string SaveIn => Selection.BaseDirectory is { } folder ? Selection.FolderName(folder) : "";
 
     /// <summary>The redundancy, in whole percent, from <see cref="MinRedundancy"/> to <see cref="MaxRedundancy"/>.</summary>
     public int Redundancy
@@ -202,13 +207,13 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
-    /// <summary>How many recovery files to make, from 1 to 999; null leaves it to the engine.</summary>
+    /// <summary>How many recovery files to make, from 1 to <see cref="MaxRecoveryFiles"/>; null leaves it to the engine.</summary>
     public int? RecoveryFileCount
     {
         get => _recoveryFileCount;
         set
         {
-            if (Set(ref _recoveryFileCount, value is { } count ? Math.Clamp(count, 1, 999) : null))
+            if (Set(ref _recoveryFileCount, value is { } count ? Math.Clamp(count, 1, MaxRecoveryFiles) : null))
             {
                 RequestEstimate();
             }
@@ -230,12 +235,12 @@ public sealed class CreateScreen : Observable, IDisposable
     /// <summary>What the engine says the create will make; null until it has said, or when it could not.</summary>
     public RecoveryEstimate? Estimate
     {
-        get => _estimateResult;
+        get => _estimate;
         private set
         {
-            if (Set(ref _estimateResult, value))
+            if (Set(ref _estimate, value))
             {
-                Announce(nameof(SizeText));
+                Announce(nameof(SpaceText));
                 Announce(nameof(RepairableText));
                 Announce(nameof(BlocksText));
                 Announce(nameof(RecoveryFilesText));
@@ -261,22 +266,22 @@ public sealed class CreateScreen : Observable, IDisposable
     public string? EstimateProblem { get => _estimateProblem; private set => Set(ref _estimateProblem, value); }
 
     /// <summary>How much space the recovery files will take, e.g. "≈ 310 MB".</summary>
-    public string SizeText => Estimate is { } estimate ? "≈ " + Screens.SizeText.Of(estimate.TotalSize) : "—";
+    public string SpaceText => Estimate is { } estimate ? "≈ " + SizeText.Of(estimate.TotalSize) : "—";
 
     /// <summary>The most lost data they can rebuild, e.g. "≈ 310 MB".</summary>
-    public string RepairableText => Estimate is { } estimate ? "≈ " + Screens.SizeText.Of(estimate.RepairableSize) : "—";
+    public string RepairableText => Estimate is { } estimate ? "≈ " + SizeText.Of(estimate.RepairableSize) : "—";
 
     /// <summary>The blocks the engine will use, e.g. "240 blocos de 24 KB, 24 para recuperação".</summary>
     public string BlocksText => Estimate is { } estimate
-        ? $"{estimate.SourceBlocks.ToString("N0", PtBrazil.Culture)} blocos de {Screens.SizeText.Of(estimate.BlockSize)}, {estimate.RecoveryBlocks.ToString("N0", PtBrazil.Culture)} para recuperação"
+        ? $"{PtBrazil.Count(estimate.SourceBlocks, "bloco", "blocos")} de {SizeText.Of(estimate.BlockSize)}, {estimate.RecoveryBlocks.ToString("N0", PtBrazil.Culture)} para recuperação"
         : "";
 
     /// <summary>How many recovery files the engine will make, the index aside, e.g. "1 arquivo de recuperação, além do índice".</summary>
     public string RecoveryFilesText => Estimate is { } estimate
-        ? (estimate.RecoveryFiles == 1 ? "1 arquivo de recuperação" : $"{estimate.RecoveryFiles} arquivos de recuperação") + ", além do índice"
+        ? PtBrazil.Count(estimate.RecoveryFiles, "arquivo de recuperação", "arquivos de recuperação") + ", além do índice"
         : "";
 
-    /// <summary>A set of the same name is already in the folder: creating replaces it, the old files going to the Recycle Bin.</summary>
+    /// <summary>A set of the same name is already in the folder: creating replaces it, its files going to the Recycle Bin.</summary>
     public bool ReplacesExisting
     {
         get => _replacesExisting;
@@ -285,11 +290,18 @@ public sealed class CreateScreen : Observable, IDisposable
             if (Set(ref _replacesExisting, value))
             {
                 Announce(nameof(CreateText));
+                Announce(nameof(ReplaceWarning));
             }
         }
     }
 
     public string CreateText => ReplacesExisting ? "Substituir arquivos de recuperação" : "Criar arquivos de recuperação";
+
+    /// <summary>What happens to the set being replaced; null when there is none.</summary>
+    public string? ReplaceWarning => !ReplacesExisting
+        ? null
+        : "Já existe um conjunto com este nome nesta pasta. "
+            + (HasRecycleBin ? "Os arquivos dele irão para a Lixeira." : "Os arquivos dele serão apagados, porque este disco não tem Lixeira.");
 
     /// <summary>Only once the engine has worked out the sizes for the current settings, so what is shown is what is made.</summary>
     public bool CanCreate =>
@@ -312,6 +324,9 @@ public sealed class CreateScreen : Observable, IDisposable
     }
 
     public bool IsPercentUnknown => Percent is null;
+
+    /// <summary>The engine is running, so it can be paused or canceled (not while the set it replaces is moved away).</summary>
+    public bool CanControl => Run is not null;
 
     public bool IsPaused
     {
@@ -343,7 +358,37 @@ public sealed class CreateScreen : Observable, IDisposable
     public bool HasBanner => Banner is not null;
 
     /// <summary>What went wrong, in technical terms, when something failed; otherwise null.</summary>
-    public string? Details { get => _details; private set => Set(ref _details, value); }
+    public string? Details
+    {
+        get => _details;
+        private set
+        {
+            Set(ref _details, value);
+            _detailsFromEstimate = false;
+        }
+    }
+
+    /// <summary>The engine task under way; null before it starts and once it has ended.</summary>
+    private IEngineRun? Run
+    {
+        get => _run;
+        set
+        {
+            if (Set(ref _run, value))
+            {
+                Announce(nameof(CanControl));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether the files of a set replaced in this folder go to the Recycle Bin: Windows keeps one only on
+    /// fixed disks, and deletes at once on USB sticks, memory cards and network folders.
+    /// </summary>
+    private bool HasRecycleBin =>
+        Selection.BaseDirectory is { } folder
+        && !folder.StartsWith(@"\\", StringComparison.Ordinal)
+        && new DriveInfo(folder).DriveType == DriveType.Fixed;
 
     /// <summary>
     /// Adds <paramref name="paths"/> (files or folders) to what the set covers, reading them from disk off the
@@ -356,7 +401,6 @@ public sealed class CreateScreen : Observable, IDisposable
             throw new InvalidOperationException("Files cannot be added while reading or creating.");
         }
 
-        var readNumber = ++_readNumber;
         string[] all = [.. Selection.Roots, .. paths];
         StopEstimate();
         Estimate = null;
@@ -366,32 +410,21 @@ public sealed class CreateScreen : Observable, IDisposable
         Stage = CreateStage.Reading;
         Heading = "Criar";
 
-        Selection selection;
         try
         {
-            selection = await Task.Run(() => Selection.Read(all)).ConfigureAwait(true);
+            Selection = await Task.Run(() => Selection.Read(all)).ConfigureAwait(true);
         }
         catch (Exception failure)
         {
             // Shown on screen with its details: a folder vanished mid-read, a disk failed...
-            if (readNumber == _readNumber)
-            {
-                Stage = CreateStage.Failed;
-                Banner = new Banner(BannerKind.Error, "Não foi possível ler os arquivos escolhidos.", "Confira se o disco está acessível e tente de novo.");
-                Details = failure.ToString();
-            }
-
+            Stage = CreateStage.Failed;
+            Banner = new Banner(BannerKind.Error, "Não foi possível ler os arquivos escolhidos.", "Confira se o disco está acessível e tente de novo.");
+            Details = failure.ToString();
             return;
         }
 
-        if (readNumber != _readNumber)
-        {
-            return;
-        }
-
-        Selection = selection;
         Stage = HasSelection ? CreateStage.Ready : CreateStage.Idle;
-        ReplacesExisting = Selection.ExistingRecoveryFiles().Count > 0;
+        CheckForExistingSet();
         RequestEstimate();
     }
 
@@ -426,12 +459,15 @@ public sealed class CreateScreen : Observable, IDisposable
         }
 
         var create = CommandFor(Selection);
-        var existing = Selection.ExistingRecoveryFiles();
+        var replaced = Selection.ExistingRecoveryFiles();
+        var hasRecycleBin = HasRecycleBin;
         var runNumber = ++_runNumber;
         StopEstimate();
         Stage = CreateStage.Creating;
         Heading = "Criando";
-        ActivityText = existing.Count > 0 ? "Levando o conjunto antigo para a Lixeira" : "Preparando";
+        ActivityText = replaced.Count == 0 ? "Preparando"
+            : hasRecycleBin ? "Levando o conjunto anterior para a Lixeira"
+            : "Apagando o conjunto anterior";
         Percent = null;
         IsPaused = false;
         Banner = null;
@@ -439,15 +475,21 @@ public sealed class CreateScreen : Observable, IDisposable
 
         try
         {
-            if (existing.Count > 0)
+            if (replaced.Count > 0)
             {
-                // The engine would write over the old index but leave the old recovery files beside the new ones.
-                await Task.Run(() => _recycle(existing)).ConfigureAwait(true);
+                // The engine would write over the index but leave the replaced set's recovery files beside the new ones.
+                await Task.Run(() => _recycle(replaced)).ConfigureAwait(true);
+                if (_disposed)
+                {
+                    // The window closed meanwhile: start nothing that would outlive it.
+                    return;
+                }
+
                 ActivityText = "Preparando";
             }
 
             _creating = create;
-            _run = _startEngine(create, new UiProgress<EngineProgress>(progress =>
+            Run = _startEngine(create, new UiProgress<EngineProgress>(progress =>
             {
                 // An update posted just before the task ended may arrive after it: ignore it then.
                 if (runNumber == _runNumber && IsRunning)
@@ -459,40 +501,47 @@ public sealed class CreateScreen : Observable, IDisposable
         }
         catch (Exception failure)
         {
-            Fail(existing.Count > 0 && _run is null
-                    ? new Banner(BannerKind.Error, "Não foi possível levar o conjunto antigo para a Lixeira.", "Confira se algum dos arquivos está aberto em outro programa.")
+            Fail(replaced.Count > 0 && Run is null
+                    ? new Banner(BannerKind.Error, "Não foi possível tirar o conjunto anterior da pasta.", "Confira se algum dos arquivos dele está aberto em outro programa.")
                     : new Banner(BannerKind.Error, "Não foi possível iniciar a criação.", "O ArkPar pode estar instalado de forma incompleta."),
                 failure.ToString());
             return;
         }
 
+        var replacedNote = replaced.Count == 0 ? null
+            : hasRecycleBin ? "O conjunto anterior está na Lixeira, se quiser recuperá-lo."
+            : "O conjunto anterior foi apagado; crie o conjunto de novo para proteger os arquivos.";
+        EngineResult result;
         try
         {
-            var result = await _run.Completion.ConfigureAwait(true);
-            EndRun();
-            await ShowAsync(result, create, replaced: existing.Count > 0).ConfigureAwait(true);
+            result = await Run.Completion.ConfigureAwait(true);
         }
         catch (Exception failure)
         {
             // Never leave the screen stuck on "Criando": whatever failed is shown, with its details.
             EndRun();
-            await RemovePartialFilesAsync(create).ConfigureAwait(true);
-            Fail(new Banner(BannerKind.Error, "A criação terminou de forma inesperada.", Detail: null), failure.ToString());
+            var leftover = await RemovePartialFilesAsync(create).ConfigureAwait(true);
+            Fail(new Banner(BannerKind.Error, "A criação terminou de forma inesperada.", Join(replacedNote, LeftoverText(create, leftover), " ")),
+                Join(failure.ToString(), leftover));
+            return;
         }
+
+        EndRun();
+        await ShowAsync(result, create, replacedNote).ConfigureAwait(true);
     }
 
     public void TogglePause()
     {
-        if (_run is null)
+        if (Run is null)
         {
             return;
         }
 
-        _run.SetPaused(!_run.IsPaused);
-        IsPaused = _run.IsPaused;
+        Run.SetPaused(!Run.IsPaused);
+        IsPaused = Run.IsPaused;
     }
 
-    public void Cancel() => _run?.Cancel();
+    public void Cancel() => Run?.Cancel();
 
     /// <summary>
     /// Ends the engine at once if it is still running, e.g. when the window closes, and removes the recovery
@@ -500,8 +549,9 @@ public sealed class CreateScreen : Observable, IDisposable
     /// </summary>
     public void Dispose()
     {
+        _disposed = true;
         StopEstimate();
-        if (_run is not { } run || _creating is not { } create)
+        if (Run is not { } run || _creating is not { } create)
         {
             return;
         }
@@ -517,63 +567,78 @@ public sealed class CreateScreen : Observable, IDisposable
 
     private void EndRun()
     {
-        _run?.Dispose();
-        _run = null;
+        Run?.Dispose();
+        Run = null;
         _creating = null;
         IsPaused = false;
     }
 
-    private async Task ShowAsync(EngineResult result, EngineCommand.Create create, bool replaced)
+    private async Task ShowAsync(EngineResult result, EngineCommand.Create create, string? replacedNote)
     {
-        const string OldSetInRecycleBin = "O conjunto antigo está na Lixeira, se quiser recuperá-lo.";
-        switch (result.Outcome)
+        if (result.Outcome == EngineOutcome.Completed)
         {
-            case EngineOutcome.Completed:
-                var recoveryFiles = Selection.ExistingRecoveryFiles();
-                var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
-                Stage = CreateStage.Created;
-                Heading = "Conjunto criado";
-                ReplacesExisting = true;
-                Banner = new Banner(
-                    BannerKind.Success,
-                    $"Os arquivos de recuperação protegem {Selection.Summary}.",
-                    $"{(recoveryFiles.Count == 1 ? "1 arquivo" : $"{recoveryFiles.Count} arquivos")} · {Screens.SizeText.Of(size)}, em {Selection.BaseDirectory}");
-                return;
-
-            case EngineOutcome.Canceled:
-                await RemovePartialFilesAsync(create).ConfigureAwait(true);
-                Stage = CreateStage.Canceled;
-                Heading = "Criação cancelada";
-                ReplacesExisting = false;
-                Banner = new Banner(BannerKind.Warning, "Nenhum arquivo de recuperação foi gravado.", replaced ? OldSetInRecycleBin : null);
-                RequestEstimate();
-                return;
-
-            default:
-                await RemovePartialFilesAsync(create).ConfigureAwait(true);
-                ReplacesExisting = false;
-                Fail(
-                    new Banner(BannerKind.Error, "O motor não conseguiu criar os arquivos de recuperação.",
-                        "Confira se há espaço no disco e se a pasta permite gravar." + (replaced ? " " + OldSetInRecycleBin : "")),
-                    result.Output);
-                return;
+            // The set is made: nothing from here on may remove it.
+            Stage = CreateStage.Created;
+            Heading = "Conjunto criado";
+            CheckForExistingSet();
+            var recoveryFiles = Selection.RecoverySetFiles(create.RecoveryFile);
+            var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
+            Banner = new Banner(
+                BannerKind.Success,
+                $"Os arquivos de recuperação protegem {Selection.Summary}.",
+                $"{PtBrazil.Count(recoveryFiles.Count, "arquivo", "arquivos")} · {SizeText.Of(size)}, em {create.BaseDirectory}");
+            return;
         }
+
+        var leftover = await RemovePartialFilesAsync(create).ConfigureAwait(true);
+        if (result.Outcome == EngineOutcome.Canceled)
+        {
+            Stage = CreateStage.Canceled;
+            Heading = "Criação cancelada";
+            CheckForExistingSet();
+            Banner = new Banner(BannerKind.Warning, "Nenhum arquivo de recuperação foi gravado.", Join(replacedNote, LeftoverText(create, leftover), " "));
+            Details = leftover;
+            RequestEstimate();
+            return;
+        }
+
+        Fail(
+            new Banner(BannerKind.Error, "O motor não conseguiu criar os arquivos de recuperação.",
+                Join(Join("Confira se há espaço no disco e se a pasta permite gravar.", replacedNote, " "), LeftoverText(create, leftover), " ")),
+            Join(result.Output, leftover));
     }
 
-    private void Fail(Banner banner, string details)
+    private void Fail(Banner banner, string? details)
     {
         Stage = CreateStage.Failed;
         Heading = "Não foi possível criar";
+        CheckForExistingSet();
         Banner = banner;
         Details = details;
         RequestEstimate();
     }
 
+    /// <summary>Whether a set of this name is in the folder now, so Criar would replace it.</summary>
+    private void CheckForExistingSet() => ReplacesExisting = Selection.ExistingRecoveryFiles().Count > 0;
+
     /// <summary>
     /// Removes what a create that did not finish left behind. Every file of the set's name is from this run:
-    /// an older set of that name went to the Recycle Bin before it started.
+    /// a set of that name it replaced was moved away before it started.
     /// </summary>
-    private static Task RemovePartialFilesAsync(EngineCommand.Create create) => Task.Run(() => DeletePartialFiles(create));
+    /// <returns>Null when all went; otherwise why some could not, which the screen then shows.</returns>
+    private static async Task<string?> RemovePartialFilesAsync(EngineCommand.Create create)
+    {
+        try
+        {
+            await Task.Run(() => DeletePartialFiles(create)).ConfigureAwait(true);
+            return null;
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            // A file held by another program (an antivirus scanning it...): the screen says which to delete.
+            return failure.ToString();
+        }
+    }
 
     private static void DeletePartialFiles(EngineCommand.Create create)
     {
@@ -582,6 +647,13 @@ public sealed class CreateScreen : Observable, IDisposable
             File.Delete(file);
         }
     }
+
+    private static string? LeftoverText(EngineCommand.Create create, string? leftover) => leftover is null
+        ? null
+        : $"Arquivos incompletos ficaram na pasta; apague os que começam com \"{Path.GetFileNameWithoutExtension(create.RecoveryFile)}\" e terminam em .par2.";
+
+    private static string? Join(string? first, string? second, string separator = "\n\n") =>
+        first is null ? second : second is null ? first : first + separator + second;
 
     private EngineCommand.Create CommandFor(Selection selection) =>
         new(
@@ -594,19 +666,22 @@ public sealed class CreateScreen : Observable, IDisposable
     private void RequestEstimate()
     {
         _estimateNumber++;
-        if (Stage is not (CreateStage.Ready or CreateStage.Created or CreateStage.Canceled or CreateStage.Failed)
+        if (_disposed
+            || Stage is not (CreateStage.Ready or CreateStage.Created or CreateStage.Canceled or CreateStage.Failed)
             || !HasSelection || Selection.Problem is not null)
         {
             return;
         }
 
-        if (_estimating is not null)
+        // IsEstimating is set before the loop's first wait, so a trial that ends at once is never mistaken for one under way.
+        if (IsEstimating)
         {
             _estimateAgain = true;
             return;
         }
 
-        _estimating = EstimateAsync();
+        // The loop shows every failure on the screen itself.
+        _ = EstimateAsync();
     }
 
     private async Task EstimateAsync()
@@ -622,11 +697,17 @@ public sealed class CreateScreen : Observable, IDisposable
                 _estimateStop = stop;
                 try
                 {
-                    var estimate = await _estimate(CommandFor(Selection), stop.Token).ConfigureAwait(true);
+                    var estimate = await _runTrial(CommandFor(Selection), stop.Token).ConfigureAwait(true);
                     if (number == _estimateNumber)
                     {
+                        var clearDetails = _detailsFromEstimate;
                         Estimate = estimate;
                         EstimateProblem = null;
+                        if (clearDetails)
+                        {
+                            // Only an earlier failed estimate's details go: a failed create's stay.
+                            Details = null;
+                        }
                     }
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested)
@@ -641,6 +722,7 @@ public sealed class CreateScreen : Observable, IDisposable
                         Estimate = null;
                         EstimateProblem = "Não foi possível calcular o tamanho com estes ajustes.";
                         Details = failure is EngineTrialException trial ? trial.Output : failure.ToString();
+                        _detailsFromEstimate = true;
                     }
                 }
                 finally
@@ -652,7 +734,6 @@ public sealed class CreateScreen : Observable, IDisposable
         }
         finally
         {
-            _estimating = null;
             IsEstimating = false;
         }
     }

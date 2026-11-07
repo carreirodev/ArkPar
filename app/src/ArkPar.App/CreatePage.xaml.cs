@@ -19,11 +19,16 @@ public sealed partial class CreatePage : UserControl
     {
         InitializeComponent();
 
-        // Set here: an x:Bind to a static list crashes the XAML compiler (WMC9999).
+        // Set here, from the screen's own values: an x:Bind to a static member crashes the XAML compiler (WMC9999).
         BlockSizeBox.ItemsSource = CreateScreen.BlockSizes;
         MemoryBox.ItemsSource = CreateScreen.MemoryLimits;
         BlockSizeBox.SelectedIndex = 0;
         MemoryBox.SelectedIndex = 0;
+        RedundancySlider.Minimum = CreateScreen.MinRedundancy;
+        RedundancySlider.Maximum = CreateScreen.MaxRedundancy;
+        RedundancySlider.Value = Screen.Redundancy;
+        RecoveryFileCountBox.Minimum = 1;
+        RecoveryFileCountBox.Maximum = CreateScreen.MaxRecoveryFiles;
 
         FilesTree.Expanding += (_, args) => AddChildren(args.Node);
         Screen.PropertyChanged += (_, e) =>

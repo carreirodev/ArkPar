@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using System.Text.RegularExpressions;
+
 namespace ArkPar.Screens;
 
 /// <summary>
 /// What a single set covers: the files and folders chosen on the Create screen, read from disk, with every
 /// file inside the folders at any depth. Read it off the screen's thread: a big folder takes a while.
 /// </summary>
-public sealed class Selection
+public sealed partial class Selection
 {
     /// <summary>The most files one recovery set can protect (the PAR2 format's limit, enforced by the engine).</summary>
     public const int MaxFiles = 32768;
 
     private const string RecoveryExtension = ".par2";
 
-    // Hidden and system files (Thumbs.db, desktop.ini) stay out, as in the engine's own folder search, and
-    // links to other folders are not followed, so a link back up the tree never loops.
-    private const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System | FileAttributes.ReparsePoint;
+    // Hidden and system files (Thumbs.db, desktop.ini) stay out, as in the engine's own folder search.
+    private const FileAttributes Skipped = FileAttributes.Hidden | FileAttributes.System;
 
     private Selection(IReadOnlyList<string> roots)
     {
@@ -43,7 +44,7 @@ public sealed class Selection
     public long TotalSize { get; private init; }
 
     /// <summary>How many files and how much they hold, e.g. "412 arquivos · 3,1 GB".</summary>
-    public string Summary => Count(Files.Count, "arquivo", "arquivos") + " · " + SizeText.Of(TotalSize);
+    public string Summary => PtBrazil.Count(Files.Count, "arquivo", "arquivos") + " · " + SizeText.Of(TotalSize);
 
     /// <summary>What was chosen, as a tree: each folder with its folders, then its files.</summary>
     public IReadOnlyList<SelectionNode> Tree { get; private init; } = [];
@@ -98,10 +99,10 @@ public sealed class Selection
         };
     }
 
-    /// <summary>The recovery files already in <see cref="BaseDirectory"/> under this set's name (index and volumes).</summary>
+    /// <summary>The recovery files already in <see cref="BaseDirectory"/> under this set's name.</summary>
     public IReadOnlyList<string> ExistingRecoveryFiles() => RecoveryFile is null ? [] : RecoverySetFiles(RecoveryFile);
 
-    /// <summary>The files of the set whose index is <paramref name="recoveryFile"/> that are on disk: the index and its volumes.</summary>
+    /// <summary>The files of the set whose index is <paramref name="recoveryFile"/> that are on disk: the index and the files holding the recovery blocks.</summary>
     public static IReadOnlyList<string> RecoverySetFiles(string recoveryFile)
     {
         var folder = Path.GetDirectoryName(recoveryFile);
@@ -110,7 +111,8 @@ public sealed class Selection
             return [];
         }
 
-        // "Viagem.par2" and its volumes "Viagem.vol0+19.par2"..., not "Viagem 2.par2".
+        // "Viagem.par2" and "Viagem.vol0+19.par2" (first block + block count, create.c), not "Viagem 2.par2"
+        // nor "Viagem.vol2.par2", which belong to other sets.
         var name = Path.GetFileNameWithoutExtension(recoveryFile);
         return
         [
@@ -119,11 +121,15 @@ public sealed class Selection
                 {
                     var fileName = Path.GetFileName(file);
                     return fileName.Equals(name + RecoveryExtension, StringComparison.OrdinalIgnoreCase)
-                        || fileName.StartsWith(name + ".vol", StringComparison.OrdinalIgnoreCase);
+                        || (fileName.StartsWith(name, StringComparison.OrdinalIgnoreCase)
+                            && RecoveryFileSuffix().IsMatch(fileName.AsSpan(name.Length)));
                 })
                 .Order(StringComparer.OrdinalIgnoreCase),
         ];
     }
+
+    [GeneratedRegex(@"^\.vol\d+\+\d+\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex RecoveryFileSuffix();
 
     private static List<string> RootsOf(List<string> fullPaths)
     {
@@ -148,7 +154,7 @@ public sealed class Selection
         var folderFiles = new List<SelectionNode>();
         try
         {
-            foreach (var entry in folder.EnumerateFileSystemInfos().Where(entry => (entry.Attributes & Skipped) == 0))
+            foreach (var entry in folder.EnumerateFileSystemInfos().Where(entry => (entry.Attributes & Skipped) == 0 && !IsLink(entry)))
             {
                 if (entry is DirectoryInfo subfolder)
                 {
@@ -178,28 +184,41 @@ public sealed class Selection
         return SelectionNode.Folder(FolderName(folder.FullName), children);
     }
 
-    private static string CommonParent(List<string> roots)
+    /// <summary>The nearest folder holding all of <paramref name="roots"/> (full paths on one drive).</summary>
+    internal static string CommonParent(List<string> roots)
     {
         var common = Path.GetDirectoryName(roots[0]) ?? roots[0];
         while (!roots.All(root => IsInside(root, common)))
         {
-            common = Path.GetDirectoryName(common) ?? common;
+            // Above the root of the drive there is nothing: the roots were not all on one drive.
+            common = Path.GetDirectoryName(common)
+                ?? throw new ArgumentException("The paths are not all on one drive.", nameof(roots));
         }
 
         return common;
     }
 
-    private static bool IsInside(string path, string folder) =>
-        path.StartsWith(Path.TrimEndingDirectorySeparator(folder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+    /// <summary>Whether <paramref name="path"/> is somewhere inside <paramref name="folder"/>, which may be a drive root ("D:\").</summary>
+    internal static bool IsInside(string path, string folder)
+    {
+        // A drive root keeps its separator ("D:\"); any other folder does not have one to keep.
+        var prefix = Path.EndsInDirectorySeparator(folder) ? folder : folder + Path.DirectorySeparatorChar;
+        return path.Length > prefix.Length && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>A folder's name; for the root of a drive, its letter ("D:\" → "D").</summary>
-    private static string FolderName(string folder) =>
+    internal static string FolderName(string folder) =>
         Path.GetFileName(Path.TrimEndingDirectorySeparator(folder)) is { Length: > 0 } name ? name : folder.TrimEnd('\\', ':');
+
+    /// <summary>
+    /// A symbolic link or junction: not followed, so a link back up the tree never loops. OneDrive's folders
+    /// and files are reparse points too, but not links (no target), and they are read like any other.
+    /// </summary>
+    private static bool IsLink(FileSystemInfo entry) =>
+        (entry.Attributes & FileAttributes.ReparsePoint) != 0 && entry.LinkTarget is not null;
 
     private static bool IsRecoveryFile(string path) => path.EndsWith(RecoveryExtension, StringComparison.OrdinalIgnoreCase);
 
-    private static string Count(int count, string singular, string plural) =>
-        count == 1 ? "1 " + singular : count.ToString("N0", PtBrazil.Culture) + " " + plural;
 }
 
 /// <summary>A folder or file in the tree of what a set covers.</summary>

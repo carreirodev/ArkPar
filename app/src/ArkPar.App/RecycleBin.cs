@@ -2,7 +2,7 @@
 
 using Microsoft.VisualBasic.FileIO;
 
-namespace ArkPar.Screens;
+namespace ArkPar.App;
 
 /// <summary>Sends files to the Windows Recycle Bin, so the user can get them back.</summary>
 public static class RecycleBin

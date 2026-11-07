@@ -277,7 +277,7 @@ public sealed class VerifyScreen : Observable, IDisposable
             case EngineOutcome.Completed when allFixed:
                 Stage = VerifyStage.Repaired;
                 Heading = "Reparo concluído";
-                Banner = new Banner(BannerKind.Success, Count(problems, "arquivo consertado.", "arquivos consertados."), Recycled(report.DamagedFiles.Count + report.AppendedFiles.Count));
+                Banner = new Banner(BannerKind.Success, PtBrazil.Count(problems, "arquivo consertado.", "arquivos consertados."), Recycled(report.DamagedFiles.Count + report.AppendedFiles.Count));
                 break;
 
             case EngineOutcome.Completed:
@@ -373,7 +373,7 @@ public sealed class VerifyScreen : Observable, IDisposable
             : new FileCounts(report.CompleteFiles.Count, report.DamagedFiles.Count + report.AppendedFiles.Count, report.MissingFiles.Count, report.MisnamedFiles.Count);
 
         var completeSize = report.CompleteFiles.Sum(file => SizeOf(file) ?? 0);
-        var summary = Count(complete.Count, "arquivo", "arquivos") + " · " + SizeText.Of(completeSize);
+        var summary = PtBrazil.Count(complete.Count, "arquivo", "arquivos") + " · " + SizeText.Of(completeSize);
         return new Files(counts, problems, complete, summary);
     }
 
@@ -390,7 +390,7 @@ public sealed class VerifyScreen : Observable, IDisposable
 
     private static string AllComplete(int files) => files == 1 ? "O arquivo está íntegro." : $"Os {files} arquivos estão íntegros.";
 
-    private static string WithProblem(int files) => Count(files, "arquivo com problema.", "arquivos com problema.");
+    private static string WithProblem(int files) => PtBrazil.Count(files, "arquivo com problema.", "arquivos com problema.");
 
     private static string? BlocksNeeded(VerificationReport report) => report.RecoveryBlocks switch
     {
@@ -416,8 +416,6 @@ public sealed class VerifyScreen : Observable, IDisposable
     };
 
     private const string VerifyAgain = "Verifique de novo para ver como os arquivos ficaram.";
-
-    private static string Count(int count, string singular, string plural) => count == 1 ? "1 " + singular : $"{count} {plural}";
 
     private static string DateText(DateTime date) => date.ToString("d", PtBrazil.Culture);
 

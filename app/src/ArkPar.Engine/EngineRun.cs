@@ -66,11 +66,7 @@ public sealed class EngineRun : IEngineRun
         string enginePath,
         TimeSpan cancelGracePeriod)
     {
-        if (!File.Exists(enginePath))
-        {
-            throw new FileNotFoundException("The engine (par2j64.exe) was not found.", enginePath);
-        }
-
+        EnsureEngine(enginePath);
         var runDirectory = RunDirectory.Create();
         try
         {
@@ -86,6 +82,15 @@ public sealed class EngineRun : IEngineRun
         {
             Directory.Delete(runDirectory, recursive: true);
             throw;
+        }
+    }
+
+    /// <summary>Fails clearly when the engine is not where the app expects it (e.g. an incomplete install).</summary>
+    internal static void EnsureEngine(string enginePath)
+    {
+        if (!File.Exists(enginePath))
+        {
+            throw new FileNotFoundException("The engine (par2j64.exe) was not found.", enginePath);
         }
     }
 

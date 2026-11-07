@@ -22,10 +22,7 @@ public static class EngineTrial
     {
         cancellationToken.ThrowIfCancellationRequested();
         enginePath ??= EngineRun.DefaultEnginePath;
-        if (!File.Exists(enginePath))
-        {
-            throw new FileNotFoundException("The engine (par2j64.exe) was not found.", enginePath);
-        }
+        EngineRun.EnsureEngine(enginePath);
 
         var runDirectory = RunDirectory.Create();
         try
@@ -91,8 +88,6 @@ public static class EngineTrial
 public sealed class EngineTrialException(int exitCode, string output, Exception? innerException = null)
     : Exception($"The engine's trial ended with exit code {exitCode}.", innerException)
 {
-    public int ExitCode { get; } = exitCode;
-
     /// <summary>Everything the engine printed.</summary>
     public string Output { get; } = output;
 }

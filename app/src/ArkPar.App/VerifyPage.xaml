@@ -9,18 +9,8 @@
     xmlns:screens="using:ArkPar.Screens">
 
     <UserControl.Resources>
-        <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
-            <Setter Property="Padding" Value="18,16" />
-        </Style>
         <Style x:Key="StatNumber" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
             <Setter Property="FontSize" Value="24" />
-        </Style>
-        <Style x:Key="StatLabel" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
-            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
         </Style>
     </UserControl.Resources>
 
@@ -101,19 +91,19 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel>
                             <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Complete), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
-                            <TextBlock Text="íntegros" Style="{StaticResource StatLabel}" />
+                            <TextBlock Text="íntegros" Style="{StaticResource SecondaryCaption}" />
                         </StackPanel>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Damaged), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                            <TextBlock Text="danificados" Style="{StaticResource StatLabel}" />
+                            <TextBlock Text="danificados" Style="{StaticResource SecondaryCaption}" />
                         </StackPanel>
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Missing), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
-                            <TextBlock Text="faltando" Style="{StaticResource StatLabel}" />
+                            <TextBlock Text="faltando" Style="{StaticResource SecondaryCaption}" />
                         </StackPanel>
                         <StackPanel Grid.Column="3" MinWidth="120" Visibility="{x:Bind local:Ui.VisibleIfPositive(Screen.Counts.Misnamed), Mode=OneWay, FallbackValue=Collapsed}">
                             <TextBlock Text="{x:Bind local:Ui.NumberOf(Screen.Counts.Misnamed), Mode=OneWay, FallbackValue=''}" Style="{StaticResource StatNumber}" Foreground="{ThemeResource SystemFillColorAttentionBrush}" />
-                            <TextBlock Text="nome trocado" Style="{StaticResource StatLabel}" />
+                            <TextBlock Text="nome trocado" Style="{StaticResource SecondaryCaption}" />
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -123,7 +113,7 @@
                     <StackPanel Spacing="12">
                         <Grid>
                             <TextBlock Text="{x:Bind Screen.ProblemsHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                            <TextBlock Text="miniaturas do Windows" Style="{StaticResource StatLabel}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            <TextBlock Text="miniaturas do Windows" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
                         </Grid>
                         <ItemsRepeater ItemsSource="{x:Bind Screen.ProblemFiles, Mode=OneWay}">
                             <ItemsRepeater.Layout>
@@ -143,7 +133,7 @@
                     <StackPanel>
                         <Grid Padding="0,0,0,6">
                             <TextBlock Text="{x:Bind Screen.CompleteHeading, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                            <TextBlock Text="{x:Bind Screen.CompleteSummary, Mode=OneWay}" Style="{StaticResource StatLabel}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            <TextBlock Text="{x:Bind Screen.CompleteSummary, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
                         </Grid>
                         <ItemsRepeater ItemsSource="{x:Bind Screen.CompleteFiles, Mode=OneWay}">
                             <ItemsRepeater.ItemTemplate>

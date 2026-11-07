@@ -9,8 +9,4 @@ namespace ArkPar.Engine;
 /// </param>
 /// <param name="RecoveryFileCount">How many recovery files hold the recovery blocks (<c>/rf</c>), the index file aside.</param>
 /// <param name="MemoryEighths">The most memory the engine may use, in eighths of the free memory, from 1 to 7 (<c>/m</c>).</param>
-public sealed record CreateOptions(int? BlockSize = null, int? RecoveryFileCount = null, int? MemoryEighths = null)
-{
-    /// <summary>Every setting chosen by the engine.</summary>
-    public static CreateOptions Automatic { get; } = new();
-}
+public sealed record CreateOptions(int? BlockSize = null, int? RecoveryFileCount = null, int? MemoryEighths = null);

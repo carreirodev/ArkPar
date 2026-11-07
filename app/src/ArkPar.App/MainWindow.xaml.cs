@@ -27,8 +27,15 @@ public sealed partial class MainWindow : Window
         Navigation.SelectedItem = CreateItem;
         Closed += (_, _) =>
         {
-            Create.Close();
-            Verify.Close();
+            // Both engines are ended, even if removing what the create left half written fails.
+            try
+            {
+                Create.Close();
+            }
+            finally
+            {
+                Verify.Close();
+            }
         };
     }
 

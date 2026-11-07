@@ -64,7 +64,7 @@ public sealed class CreateScreenTests : IDisposable
         _trial.Last.Finish(TenPercent);
 
         Assert.IsFalse(_screen.IsEstimating);
-        Assert.AreEqual("≈ 620 KB", _screen.SizeText);
+        Assert.AreEqual("≈ 620 KB", _screen.SpaceText);
         Assert.AreEqual("≈ 586 KB", _screen.RepairableText);
         Assert.IsTrue(_screen.CanCreate);
         Assert.AreEqual("Criar arquivos de recuperação", _screen.CreateText);
@@ -135,7 +135,7 @@ public sealed class CreateScreenTests : IDisposable
 
         Assert.AreEqual("Não foi possível calcular o tamanho com estes ajustes.", _screen.EstimateProblem);
         Assert.AreEqual("input file is not found, IMG_4469.JPG", _screen.Details);
-        Assert.AreEqual("—", _screen.SizeText);
+        Assert.AreEqual("—", _screen.SpaceText);
         Assert.IsFalse(_screen.CanCreate);
     }
 
@@ -224,23 +224,24 @@ public sealed class CreateScreenTests : IDisposable
     }
 
     [TestMethod]
-    public async Task AnOldSetOfTheSameNameGoesToTheRecycleBinFirst()
+    public async Task ASetOfTheSameNameGoesToTheRecycleBinFirst()
     {
-        var oldIndex = Path.Combine(_trip, "07 - Viagem Bahia.par2");
-        var oldVolume = Path.Combine(_trip, "07 - Viagem Bahia.vol0+19.par2");
-        File.WriteAllBytes(oldIndex, new byte[10]);
-        File.WriteAllBytes(oldVolume, new byte[10]);
+        var replacedIndex = Path.Combine(_trip, "07 - Viagem Bahia.par2");
+        var replacedRecoveryFile = Path.Combine(_trip, "07 - Viagem Bahia.vol0+19.par2");
+        File.WriteAllBytes(replacedIndex, new byte[10]);
+        File.WriteAllBytes(replacedRecoveryFile, new byte[10]);
 
         await ReadyAsync();
 
         Assert.IsTrue(_screen.ReplacesExisting);
         Assert.AreEqual("Substituir arquivos de recuperação", _screen.CreateText);
-        Assert.HasCount(2, _trial.Last.Create.SourceFiles, "The old recovery files are not protected by the new set.");
+        Assert.AreEqual("Já existe um conjunto com este nome nesta pasta. Os arquivos dele irão para a Lixeira.", _screen.ReplaceWarning);
+        Assert.HasCount(2, _trial.Last.Create.SourceFiles, "The replaced set's files are not protected by the new one.");
 
         var creating = _screen.CreateAsync();
         await WaitUntilAsync(() => _engine.Runs.Count == 1);
 
-        CollectionAssert.AreEqual(new[] { oldIndex, oldVolume }, _recycled);
+        CollectionAssert.AreEqual(new[] { replacedIndex, replacedRecoveryFile }, _recycled);
         _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
         await creating;
     }
@@ -280,11 +281,125 @@ public sealed class CreateScreenTests : IDisposable
         Assert.AreEqual("0x70, Espaço insuficiente no disco.", _screen.Details);
     }
 
-    private async Task ReadyAsync()
+    [TestMethod]
+    public async Task PauseAndCancelWaitForTheEngineWhileTheReplacedSetGoesToTheRecycleBin()
+    {
+        WriteSetOfTheSameName();
+        using var recycling = new ManualResetEventSlim();
+        using var screen = new CreateScreen(_engine.Start, _trial.RunAsync, files => recycling.Wait(TimeSpan.FromSeconds(10)));
+        await ReadyAsync(screen);
+
+        var creating = screen.CreateAsync();
+
+        Assert.AreEqual("Levando o conjunto anterior para a Lixeira", screen.ActivityText);
+        Assert.IsFalse(screen.CanControl);
+        recycling.Set();
+        await WaitUntilAsync(() => _engine.Runs.Count == 1);
+        Assert.IsTrue(screen.CanControl);
+
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await creating;
+        Assert.IsFalse(screen.CanControl);
+    }
+
+    [TestMethod]
+    public async Task ClosingWhileTheReplacedSetGoesToTheRecycleBinStartsNothing()
+    {
+        WriteSetOfTheSameName();
+        using var recycling = new ManualResetEventSlim();
+        var screen = new CreateScreen(_engine.Start, _trial.RunAsync, files => recycling.Wait(TimeSpan.FromSeconds(10)));
+        await ReadyAsync(screen);
+        var creating = screen.CreateAsync();
+
+        screen.Dispose();
+        recycling.Set();
+        await creating;
+
+        Assert.IsEmpty(_engine.Runs, "No engine left running after the window closed.");
+    }
+
+    [TestMethod]
+    public async Task APartialFileThatCannotBeDeletedIsReportedNotThrown()
+    {
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        var partial = Path.Combine(_trip, "07 - Viagem Bahia.vol0+24.par2");
+
+        // Held by another program, as an antivirus scanning it would.
+        using (new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, null, "Cancel"));
+            await creating;
+        }
+
+        Assert.AreEqual(CreateStage.Canceled, _screen.Stage);
+        StringAssert.Contains(_screen.Banner?.Detail, "apague os que começam com \"07 - Viagem Bahia\"");
+        Assert.IsNotNull(_screen.Details);
+    }
+
+    [TestMethod]
+    public async Task AfterAFailureTheScreenOffersReplaceOnlyIfASetIsStillThere()
+    {
+        WriteSetOfTheSameName();
+        using var screen = new CreateScreen(_engine.Start, _trial.RunAsync, files => Array.ForEach([.. files], File.Delete));
+        await ReadyAsync(screen);
+        Assert.IsTrue(screen.ReplacesExisting);
+        var creating = screen.CreateAsync();
+        await WaitUntilAsync(() => _engine.Runs.Count == 1);
+
+        _engine.Last.Fail(new InvalidOperationException("The engine's output could not be read."));
+        await creating;
+
+        Assert.AreEqual(CreateStage.Failed, screen.Stage);
+        Assert.IsFalse(screen.ReplacesExisting, "The replaced set went to the Recycle Bin.");
+        Assert.AreEqual("Criar arquivos de recuperação", screen.CreateText);
+    }
+
+    [TestMethod]
+    public async Task AnEstimateThatFailsAtOnceDoesNotBlockTheNextOne()
+    {
+        // E.g. the engine is missing: the trial fails before it starts.
+        var trials = 0;
+        using var screen = new CreateScreen(_engine.Start, (create, stop) =>
+        {
+            trials++;
+            return Task.FromException<RecoveryEstimate>(new FileNotFoundException("The engine (par2j64.exe) was not found."));
+        }, _recycled.AddRange);
+        await screen.AddAsync([_trip]);
+
+        screen.Redundancy = 20;
+
+        Assert.AreEqual(2, trials);
+        Assert.IsFalse(screen.IsEstimating);
+        Assert.AreEqual("Não foi possível calcular o tamanho com estes ajustes.", screen.EstimateProblem);
+    }
+
+    [TestMethod]
+    public async Task AnEstimateThatWorksAgainClearsTheEarlierFailure()
     {
         await _screen.AddAsync([_trip]);
+        _trial.Last.Fail(new EngineTrialException(1, "input file is not found, IMG_4469.JPG"));
+
+        _screen.Redundancy = 20;
         _trial.Last.Finish(TenPercent);
-        Assert.IsTrue(_screen.CanCreate);
+
+        Assert.IsNull(_screen.EstimateProblem);
+        Assert.IsNull(_screen.Details);
+    }
+
+    private void WriteSetOfTheSameName()
+    {
+        File.WriteAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.par2"), new byte[10]);
+        File.WriteAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.vol0+19.par2"), new byte[10]);
+    }
+
+    private Task ReadyAsync() => ReadyAsync(_screen);
+
+    private async Task ReadyAsync(CreateScreen screen)
+    {
+        await screen.AddAsync([_trip]);
+        _trial.Last.Finish(TenPercent);
+        Assert.IsTrue(screen.CanCreate);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

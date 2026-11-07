@@ -114,6 +114,31 @@ public sealed class SelectionTests
     }
 
     [TestMethod]
+    [DataRow(new[] { @"D:\Fotos", @"D:\Vídeos" }, @"D:\")]
+    [DataRow(new[] { @"D:\IMG_0001.JPG" }, @"D:\")]
+    [DataRow(new[] { @"D:\Fotos\2019\a.jpg", @"D:\Fotos\2020" }, @"D:\Fotos")]
+    public void ItemsAtTheTopOfADriveShareItsRoot(string[] roots, string expected)
+    {
+        // Disks of their own cannot be made in a test, so the path rule is checked on its own.
+        Assert.AreEqual(expected, Selection.CommonParent([.. roots]));
+        Assert.IsTrue(roots.All(root => Selection.IsInside(root, expected)));
+    }
+
+    [TestMethod]
+    public void AFolderLinkIsNotFollowed()
+    {
+        Write(@"Praia do Forte\IMG_4501.JPG", 100);
+
+        // A link back up the tree would loop.
+        Directory.CreateSymbolicLink(Path.Combine(_trip, "atalho"), _trip);
+
+        var selection = Selection.Read([_trip]);
+
+        Assert.HasCount(1, selection.Files);
+        Assert.AreEqual("Praia do Forte", string.Join(", ", selection.Tree.Single().Children.Select(child => child.Name)));
+    }
+
+    [TestMethod]
     public void AFolderWithNothingToProtectCannotMakeASet()
     {
         File.SetAttributes(Write("desktop.ini", 100), FileAttributes.Hidden | FileAttributes.System);
@@ -129,12 +154,13 @@ public sealed class SelectionTests
     {
         Write("IMG_4469.JPG", 100);
         var index = Write("07 - Viagem Bahia.par2", 100);
-        var volume = Write("07 - Viagem Bahia.vol0+19.par2", 100);
+        var recoveryFile = Write("07 - Viagem Bahia.vol0+19.par2", 100);
         Write("07 - Viagem Bahia 2.par2", 100);
+        Write("07 - Viagem Bahia.vol2.par2", 100);
 
         var selection = Selection.Read([_trip]);
 
-        CollectionAssert.AreEqual(new[] { index, volume }, selection.ExistingRecoveryFiles().ToArray());
+        CollectionAssert.AreEqual(new[] { index, recoveryFile }, selection.ExistingRecoveryFiles().ToArray(), "Not the sets named \"07 - Viagem Bahia 2\" or \"07 - Viagem Bahia.vol2\".");
     }
 
     private string Write(string name, int size)

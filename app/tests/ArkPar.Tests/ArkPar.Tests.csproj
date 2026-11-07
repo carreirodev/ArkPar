@@ -1,0 +1,18 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" Version="4.5.2" />
+  </ItemGroup>
+
+  <!-- The engine is built by app/build-engine.ps1, not by dotnet (it is a C++ project).
+       When it exists, copy it next to the tests; EngineProcess fails with a clear message
+       when it does not. -->
+  <ItemGroup Condition="Exists('$(ArkParEngineDir)par2j64.exe')">
+    <None Include="$(ArkParEngineDir)par2j64.exe" Link="engine\par2j64.exe" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

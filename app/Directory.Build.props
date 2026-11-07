@@ -1,0 +1,15 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- Shared settings for every .NET project under app/. Lives here, not at the repo
+     root, so the upstream engine project in source/ never imports it. -->
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- Where app/build-engine.ps1 puts the engine. -->
+    <ArkParEngineDir>$(MSBuildThisFileDirectory)artifacts\engine\</ArkParEngineDir>
+  </PropertyGroup>
+</Project>

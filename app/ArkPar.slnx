@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ArkPar.App/ArkPar.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ArkPar.Tests/ArkPar.Tests.csproj" />
+  </Folder>
+</Solution>

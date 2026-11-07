@@ -9,3 +9,6 @@ bin/
 obj/
 *.user
 .vs/
+
+# ArkPar build output (engine and app)
+/app/artifacts/

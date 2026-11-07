@@ -41,7 +41,7 @@ The creation mode that makes one recovery set for each selected file.
 _Avoid_: individual mode
 
 **Stale set**:
-A recovery set whose folder gained or changed files after the set was created, so those files are unprotected until the set is recreated.
+A recovery set that no longer matches the files it should protect: files were added, changed or removed after it was created, or now belong to other sets. New and changed files are unprotected until the set is recreated; a removed file may still be recoverable from it, so recreating it then waits for the user.
 _Avoid_: outdated, old set
 
 **Redundancy**:

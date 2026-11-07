@@ -74,7 +74,7 @@ public sealed class CreateScreenReviewTests : IDisposable
         var december = _screen.Items.Single(item => item.Planned.Name == "Dezembro");
         december.IsIncluded = false;
 
-        Assert.AreEqual("Pular · sem conjunto", december.StatusText);
+        Assert.AreEqual("Criar · sem conjunto", december.StatusText, "What it needs; the box says it is left out.");
         Assert.AreEqual("3 de 4 conjuntos serão criados", _screen.SetsTitle);
         Assert.AreEqual("≈ 615 KB", _screen.SpaceText, "Three sets of 205 KB.");
         await CreateAllAsync();
@@ -194,7 +194,7 @@ public sealed class CreateScreenReviewTests : IDisposable
         await ReadyAsync(CreationMode.PerSubfolder);
 
         var october = _screen.Items.Single(item => item.Planned.Name == "Outubro");
-        Assert.AreEqual("Pular · não foi possível ler o conjunto atual", october.StatusText);
+        Assert.AreEqual("Refazer · não foi possível ler o conjunto atual", october.StatusText);
         Assert.AreEqual("O motivo está em Detalhes técnicos.", october.Caution);
         Assert.AreEqual($"{index}:\nvalid file is not found", _screen.Details);
     }

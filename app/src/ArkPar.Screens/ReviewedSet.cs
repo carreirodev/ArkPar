@@ -58,7 +58,11 @@ public sealed class ReviewedSet : Observable
         }
     }
 
-    /// <summary>What the create will do and why, e.g. "Refazer · 30 arquivos novos" or "Pular · em dia".</summary>
+    /// <summary>
+    /// What the set needs and why, e.g. "Refazer · 30 arquivos novos" or "Pular · em dia". The box says whether the
+    /// create does it: a set to remake may start unchecked ("Refazer · 1 arquivo removido"). Only a set up to date
+    /// follows the box, as remaking it is the user's own choice.
+    /// </summary>
     public string StatusText
     {
         get
@@ -68,7 +72,12 @@ public sealed class ReviewedSet : Observable
                 return "Conferindo o conjunto atual…";
             }
 
-            var action = !IsIncluded ? "Pular" : Comparison.Replaces ? "Refazer" : "Criar";
+            var action = Comparison.State switch
+            {
+                SetState.Missing => "Criar",
+                SetState.UpToDate => IsIncluded ? "Refazer" : "Pular",
+                _ => "Refazer",
+            };
             return action + " · " + Reason;
         }
     }

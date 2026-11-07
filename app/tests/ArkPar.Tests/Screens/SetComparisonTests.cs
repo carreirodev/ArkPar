@@ -86,7 +86,7 @@ public sealed class SetComparisonTests : IDisposable
 
         var item = await ReviewAsync(Planned(_photos), Listed(_photos));
 
-        Assert.AreEqual("Pular · 1 arquivo alterado", item.StatusText);
+        Assert.AreEqual("Refazer · 1 arquivo alterado", item.StatusText);
         Assert.IsFalse(item.IsIncluded);
         StringAssert.Contains(item.Caution, "use Verificar e reparar antes");
     }
@@ -98,13 +98,13 @@ public sealed class SetComparisonTests : IDisposable
 
         var item = await ReviewAsync(Planned(_photos), Listed([.. _photos, gone]));
 
-        Assert.AreEqual("Pular · 1 arquivo removido", item.StatusText);
+        Assert.AreEqual("Refazer · 1 arquivo removido", item.StatusText);
         Assert.IsFalse(item.IsIncluded);
         StringAssert.Contains(item.Caution, "o conjunto atual pode recuperá-los");
 
         item.IsIncluded = true;
 
-        Assert.AreEqual("Refazer · 1 arquivo removido", item.StatusText, "The user may remake it.");
+        Assert.AreEqual("Refazer · 1 arquivo removido", item.StatusText, "The box alone says it will be made.");
     }
 
     [TestMethod]
@@ -128,7 +128,7 @@ public sealed class SetComparisonTests : IDisposable
 
         var item = await ReviewAsync(Planned([.. _photos, added]), Listed([.. _photos, gone]));
 
-        Assert.AreEqual("Pular · 1 arquivo novo, 1 arquivo alterado, 1 arquivo removido", item.StatusText);
+        Assert.AreEqual("Refazer · 1 arquivo novo, 1 arquivo alterado, 1 arquivo removido", item.StatusText);
     }
 
     [TestMethod]
@@ -141,7 +141,7 @@ public sealed class SetComparisonTests : IDisposable
                 Planned(_photos), [Index], (_, _) => throw new EngineListingException(1, "valid file is not found"), _testContext.CancellationToken),
         };
 
-        Assert.AreEqual("Pular · não foi possível ler o conjunto atual", item.StatusText);
+        Assert.AreEqual("Refazer · não foi possível ler o conjunto atual", item.StatusText);
         Assert.AreEqual("valid file is not found", item.Comparison.Details);
         Assert.AreEqual("O motivo está em Detalhes técnicos.", item.Caution);
         Assert.IsFalse(item.IsIncluded);

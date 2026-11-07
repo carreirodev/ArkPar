@@ -24,9 +24,12 @@ public sealed partial class CreatePage : UserControl
         MemoryBox.ItemsSource = CreateScreen.MemoryLimits;
         BlockSizeBox.SelectedIndex = 0;
         MemoryBox.SelectedIndex = 0;
-        RedundancySlider.Minimum = CreateScreen.MinRedundancy;
+        // Value before Minimum: raising the minimum first would push the slider's 0 up to it, and the
+        // ValueChanged handler would hand that 1% to the screen instead of its 10%.
+        var redundancy = Screen.Redundancy;
         RedundancySlider.Maximum = CreateScreen.MaxRedundancy;
-        RedundancySlider.Value = Screen.Redundancy;
+        RedundancySlider.Value = redundancy;
+        RedundancySlider.Minimum = CreateScreen.MinRedundancy;
         RecoveryFileCountBox.Minimum = 1;
         RecoveryFileCountBox.Maximum = CreateScreen.MaxRecoveryFiles;
 

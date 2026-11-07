@@ -19,7 +19,8 @@ public abstract record EngineCommand
     /// relative to the recovery file's own folder (the engine's default when no <c>/d</c> is given).
     /// </param>
     /// <param name="RedundancyPercent">From 0.01 to 1000, with up to two decimals.</param>
-    public sealed record Create(string RecoveryFile, string BaseDirectory, IReadOnlyList<string> SourceFiles, decimal RedundancyPercent)
+    /// <param name="Options">The advanced settings; null leaves them all to the engine.</param>
+    public sealed record Create(string RecoveryFile, string BaseDirectory, IReadOnlyList<string> SourceFiles, decimal RedundancyPercent, CreateOptions? Options = null)
         : EngineCommand(RecoveryFile);
 
     /// <summary>Checks every photo of a recovery set without changing anything.</summary>

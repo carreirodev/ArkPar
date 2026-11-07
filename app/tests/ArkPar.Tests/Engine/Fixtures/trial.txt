@@ -1,0 +1,36 @@
+Parchive 2.0 client version 1.3.3.7 by Yutaka Sawada
+
+Base Directory	: "P:\Fotos de família\"
+Recovery File	: "P:\Fotos de família\Fotos de família.par2"
+CPU thread	: 6 / 12
+CPU cache limit : 128 KB, 1024 KB (16)
+CPU extra	: x64 AVX2 CLMUL
+Memory usage	: Auto (18.4 GB available)
+
+Input File count	: 3
+Input File total size	: 6000000
+Input File Slice size	: 25000
+Input File Slice count	: 240
+Recovery Slice count	: 24
+Redundancy rate		: 10.00%
+Recovery File count	: 1
+Slice distribution	: 0, uniform (until 24)
+Packet Repetition limit	: 0
+
+         Size  Slice :  Filename
+      2000000     80 : "praia 01.jpg"
+      2000000     80 : "aniversário.jpg"
+      2000000     80 : "viagem\ônibus.jpg"
+
+PAR File count	: 2
+         Size  Packet  Slice :  Filename
+         5648       8      0 : "Fotos de família.par2"
+       629568      60     24 : "Fotos de família.vol0+24.par2"
+
+PAR File total size	: 635216
+
+File data in Blocks	: 100.0%
+Blocks in PAR files	: 94.4%
+Efficiency rate		: 94.4%
+
+Trial end

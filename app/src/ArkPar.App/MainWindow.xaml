@@ -22,6 +22,38 @@
             <TextBlock Text="ArkPar" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
         </StackPanel>
 
-        <local:VerifyPage x:Name="Verify" Grid.Row="1" />
+        <NavigationView
+            x:Name="Navigation"
+            Grid.Row="1"
+            PaneDisplayMode="Left"
+            OpenPaneLength="210"
+            IsPaneToggleButtonVisible="False"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="False"
+            SelectionChanged="OnNavigate">
+            <!-- Each page draws its own rounded layer over the Mica, so the frame's own stays clear. -->
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+                <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
+            </NavigationView.Resources>
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="CreateItem" Content="Criar">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE710;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="VerifyItem" Content="Verificar e reparar">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE73E;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+
+            <!-- Both pages stay alive, so switching never stops what the other is doing. -->
+            <Grid>
+                <local:CreatePage x:Name="Create" />
+                <local:VerifyPage x:Name="Verify" Visibility="Collapsed" />
+            </Grid>
+        </NavigationView>
     </Grid>
 </Window>

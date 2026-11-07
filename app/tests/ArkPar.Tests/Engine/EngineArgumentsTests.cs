@@ -34,6 +34,27 @@ public sealed class EngineArgumentsTests
     }
 
     [TestMethod]
+    public void AdvancedOptionsSetBlockSizeRecoveryFileCountAndMemory()
+    {
+        var create = new EngineCommand.Create(RecoveryFile, Folder, [], 10, new CreateOptions(BlockSize: 65536, RecoveryFileCount: 3, MemoryEighths: 4));
+
+        CollectionAssert.AreEqual(
+            new[] { "c", "/uo", "/lc256", "/rr10", "/ss65536", "/rf3", "/m4", @"/dP:\Fotos de família", "/fu", RecoveryFile, @"C:\Temp\ArkPar\run1\files.txt" },
+            EngineArguments.For(create, RunDirectory).ToArray());
+    }
+
+    [TestMethod]
+    public void TrialTakesExactlyTheArgumentsOfTheCreate()
+    {
+        // The estimate is a dry run of the very create the button starts, so the two never disagree.
+        var create = new EngineCommand.Create(RecoveryFile, Folder, [], 10, new CreateOptions(BlockSize: 65536));
+
+        string[] expected = ["t", .. EngineArguments.For(create, RunDirectory).Skip(1)];
+
+        CollectionAssert.AreEqual(expected, EngineArguments.ForTrial(create, RunDirectory).ToArray());
+    }
+
+    [TestMethod]
     public void VerifyAndRepairWriteTheirJsonResultInTheRunFolder()
     {
         string[] options = ["/uo", "/lc256", @"/vdC:\Temp\ArkPar\run1", "/w"];

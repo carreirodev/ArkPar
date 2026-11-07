@@ -44,7 +44,7 @@ Run the app:
 dotnet run --project app/src/ArkPar.App
 ```
 
-To verify a recovery set as soon as the app opens, pass its `.par2` file:
+It opens on the Create screen. To verify a recovery set as soon as the app opens, pass its `.par2` file:
 
 ```
 dotnet run --project app/src/ArkPar.App -- "D:\Fotos\Viagem\Viagem.par2"

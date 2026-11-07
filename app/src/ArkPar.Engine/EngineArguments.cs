@@ -26,13 +26,7 @@ internal static class EngineArguments
     public static IReadOnlyList<string> For(EngineCommand command, string runDirectory) => command switch
     {
         // The photos go in a list file, not on the command line, which Windows caps at 32,767 characters.
-        EngineCommand.Create create =>
-        [
-            "c", Utf8Output, CpuAndGpu,
-            "/rr" + create.RedundancyPercent.ToString("0.##", CultureInfo.InvariantCulture),
-            "/d" + create.BaseDirectory,
-            "/fu", create.RecoveryFile, Path.Combine(runDirectory, SourceListName),
-        ],
+        EngineCommand.Create create => ["c", .. CreateArguments(create, runDirectory)],
 
         // The JSON result goes in the run folder: by default the engine writes it next to itself,
         // which is read-only once the app is installed.
@@ -43,6 +37,39 @@ internal static class EngineArguments
         EngineCommand.List list => ["l", Utf8Output, list.RecoveryFile],
         _ => throw new ArgumentOutOfRangeException(nameof(command), command, "Unknown engine command."),
     };
+
+    /// <summary>
+    /// A dry run of <paramref name="create"/> (<c>t</c>, "trial"): the engine works out the recovery files from
+    /// the files' sizes alone, without reading them. Same options as the create, so its sizes are the create's.
+    /// </summary>
+    public static IReadOnlyList<string> ForTrial(EngineCommand.Create create, string runDirectory) =>
+        ["t", .. CreateArguments(create, runDirectory)];
+
+    private static IEnumerable<string> CreateArguments(EngineCommand.Create create, string runDirectory)
+    {
+        yield return Utf8Output;
+        yield return CpuAndGpu;
+        yield return "/rr" + create.RedundancyPercent.ToString("0.##", CultureInfo.InvariantCulture);
+        if (create.Options?.BlockSize is { } blockSize)
+        {
+            yield return "/ss" + blockSize.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (create.Options?.RecoveryFileCount is { } recoveryFiles)
+        {
+            yield return "/rf" + recoveryFiles.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (create.Options?.MemoryEighths is { } memory)
+        {
+            yield return "/m" + memory.ToString(CultureInfo.InvariantCulture);
+        }
+
+        yield return "/d" + create.BaseDirectory;
+        yield return "/fu";
+        yield return create.RecoveryFile;
+        yield return Path.Combine(runDirectory, SourceListName);
+    }
 
     /// <summary>Where verify and repair write their JSON result (json.c: the recovery file's name + ".json").</summary>
     public static string ReportPath(string recoveryFile, string runDirectory) =>

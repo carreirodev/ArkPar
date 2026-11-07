@@ -20,6 +20,9 @@ internal static class Ui
 
     public static Visibility VisibleIfPositive(int count) => count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    // Segoe Fluent Icons: Folder and Page.
+    public static string IconOf(bool isFolder) => isFolder ? "" : "";
+
     public static string NumberOf(int count) => count.ToString("N0", PtBrazil.Culture);
 
     // While Percent is null the bar is indeterminate (IsPercentUnknown), so the stale value never shows.

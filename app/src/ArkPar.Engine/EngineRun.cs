@@ -71,9 +71,7 @@ public sealed class EngineRun : IEngineRun
             throw new FileNotFoundException("The engine (par2j64.exe) was not found.", enginePath);
         }
 
-        // A fresh folder per task for the photo list and the JSON result, so a result is never one from an earlier task.
-        var runDirectory = Path.Combine(Path.GetTempPath(), "ArkPar", "runs", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(runDirectory);
+        var runDirectory = RunDirectory.Create();
         try
         {
             if (command is EngineCommand.Create create)

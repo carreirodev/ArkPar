@@ -15,3 +15,6 @@ Captured on 2026-11-07 on a virtual drive `P:` (so no personal path is stored), 
 | `verify-found.json` | `v /uo /vl2 ...`, on a new set, after replacing `praia 01.jpg` with a 1 MB partial copy `praia 01 - cópia.jpg` | 132 |
 | `verify-root.json` | `v /uo /lc256 /vdP:\json /w P:\fotos.par2`, on a set protecting `P:\praia 01.jpg` at the root of the drive | 0 |
 | `create-canceled.txt` | `c /uo /lc1 /rr100` on a 100 MB file, keys `p` then `c` sent through the hidden console | 2 |
+| `trial.txt` | `t /uo /lc256 /rr10 /d"P:\Fotos de família" /fu "P:\Fotos de família\Fotos de família.par2" P:\list.txt` (same three photos, new random bytes) | 0 |
+| `trial-advanced.txt` | same, with `/ss65536 /rf3 /m4` | 0 |
+| `trial-missing-file.txt` | same as `trial.txt`, with a list naming `praia 01.jpg` and a `sumiu.jpg` that does not exist | 1 |

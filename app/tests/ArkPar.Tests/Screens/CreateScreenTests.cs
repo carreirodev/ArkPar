@@ -391,6 +391,14 @@ public sealed class CreateScreenTests : IDisposable
         Assert.HasCount(10, File.ReadAllBytes(index), "The set there is untouched.");
         Assert.HasCount(10, File.ReadAllBytes(recoveryFile), "The set there is untouched.");
         Assert.IsTrue(File.Exists(partial), "The held partial file stays, without a warning.");
+
+        // Not lost: the next time, creating this set stops on what was left and names it.
+        using var reopened = NewScreen(Recycle);
+        await ReadyAsync(reopened);
+        await reopened.CreateAsync();
+
+        Assert.HasCount(1, _engine.Runs, "Nothing written over it.");
+        Assert.AreEqual("Já existe na pasta um conjunto \"07 - Viagem Bahia.arkpar-novo.par2\", deixado por uma criação anterior.", reopened.Banner?.Title);
     }
 
     [TestMethod]

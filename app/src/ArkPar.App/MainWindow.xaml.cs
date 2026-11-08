@@ -109,6 +109,10 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // The button that opens the menu shows only while the menu is folded to icons or hidden: a wide window has no use for it.
+    private void OnMenuModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args) =>
+        Navigation.IsPaneToggleButtonVisible = args.DisplayMode != NavigationViewDisplayMode.Expanded;
+
     private void OnNavigate(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         Create.Visibility = ReferenceEquals(args.SelectedItem, CreateItem) ? Visibility.Visible : Visibility.Collapsed;

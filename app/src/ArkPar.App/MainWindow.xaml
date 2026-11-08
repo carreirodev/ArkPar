@@ -22,20 +22,31 @@
             <TextBlock Text="ArkPar" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
         </StackPanel>
 
+        <!-- The menu shows names in a wide window, only icons in a narrower one, and hides behind a button in a
+             narrow one (Windows' own widths: 1008 and 641), so it never takes half of a narrow window. -->
         <NavigationView
             x:Name="Navigation"
             Grid.Row="1"
-            PaneDisplayMode="Left"
+            PaneDisplayMode="Auto"
             OpenPaneLength="210"
             IsPaneToggleButtonVisible="False"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
-            SelectionChanged="OnNavigate">
+            AlwaysShowHeader="False"
+            SelectionChanged="OnNavigate"
+            DisplayModeChanged="OnMenuModeChanged">
             <!-- Each page draws its own rounded layer over the Mica, so the frame's own stays clear. -->
             <NavigationView.Resources>
                 <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
                 <SolidColorBrush x:Key="NavigationViewContentGridBorderBrush" Color="Transparent" />
+                <!-- Windows leaves room above for a title bar drawn inside the menu; ArkPar's sits above the menu instead. -->
+                <Thickness x:Key="NavigationViewMinimalHeaderMargin">-24,4,0,0</Thickness>
             </NavigationView.Resources>
+            <!-- An empty header shown only while the menu hides behind its button, so the page starts below the button
+                 instead of under it. -->
+            <NavigationView.Header>
+                <Border />
+            </NavigationView.Header>
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="CreateItem" Content="Criar">
                     <NavigationViewItem.Icon>

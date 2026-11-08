@@ -366,6 +366,34 @@ public sealed class CreateScreenTests : IDisposable
     }
 
     [TestMethod]
+    public async Task ClosingWhileAPartialFileIsHeldClosesWithoutAnErrorAndLeavesTheSetThere()
+    {
+        var (index, recoveryFile) = WriteSetOfTheSameName();
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+        _engine.Last.WriteSet();
+        var partial = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.vol0+10.par2");
+
+        // Held by another program, as an antivirus scanning it would, while the window closes.
+        using (new FileStream(partial, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var closing = Task.Run(_screen.Dispose);
+
+            // The killed engine ends as canceled, as the real one does.
+            await WaitUntilAsync(() => _engine.Last.Disposed);
+            _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 1, null, ""));
+            await closing;
+            await creating;
+        }
+
+        Assert.IsEmpty(_recycled);
+        Assert.HasCount(10, File.ReadAllBytes(index), "The set there is untouched.");
+        Assert.HasCount(10, File.ReadAllBytes(recoveryFile), "The set there is untouched.");
+        Assert.IsTrue(File.Exists(partial), "The held partial file stays, without a warning.");
+    }
+
+    [TestMethod]
     public async Task AFailedCreateLeavesTheSetThereAsItWas()
     {
         var (index, recoveryFile) = WriteSetOfTheSameName();

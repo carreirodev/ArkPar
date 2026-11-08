@@ -142,7 +142,8 @@ internal sealed class SetCreation(
 
     /// <summary>
     /// Ends the engine at once if it is still running, e.g. when the window closes, and removes the draft it left
-    /// half written: ended this way, the engine does not remove it itself. The set there is never touched.
+    /// half written: ended this way, the engine does not remove it itself. The set there is never touched. Never
+    /// throws for a partial file that cannot be removed: the window closes all the same.
     /// </summary>
     public void Kill()
     {
@@ -156,7 +157,16 @@ internal sealed class SetCreation(
         // The run may end with an error of its own; the partial files go either way, so only its end matters.
         if (run.Completion.ContinueWith(_ => { }, TaskScheduler.Default).Wait(KillWait))
         {
-            DeletePartialFiles();
+            try
+            {
+                DeletePartialFiles();
+            }
+            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            {
+                // A partial file held by another program (an antivirus scanning it...): it stays, and the window
+                // closes with no warning, as decided in WPC-399. Not lost: the next create of this set stops on
+                // the draft left there and names it (CreateAsync).
+            }
         }
     }
 

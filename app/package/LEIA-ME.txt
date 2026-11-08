@@ -29,6 +29,19 @@ Como abrir
    - "O Windows protegeu o computador": clique em "Mais informações" e
      depois em "Executar assim mesmo".
 
+   Se o aviso disser que o Controle Inteligente de Aplicativos bloqueou o
+   ArkPar, e não houver botão para executar, o Windows não deixa abrir o
+   ArkPar enquanto esse controle estiver ligado, e não há como liberar só
+   o ArkPar. A única saída é desligar o controle: abra Segurança do
+   Windows > Controle de aplicativo e navegador > Configurações do
+   Controle Inteligente de Aplicativos e escolha "Desativado". Depois,
+   repita o passo 3.
+
+   Pense antes de desligar: esse controle protege o computador contra
+   programas perigosos. Nas versões recentes do Windows 11, dá para
+   religá-lo depois no mesmo lugar; nas mais antigas, ele só volta
+   reinstalando o Windows.
+
 Para abrir de novo depois, repita o passo 3. Para ter um atalho, clique em
 ArkPar.exe com o botão direito e escolha "Mostrar mais opções" >
 "Enviar para" > "Área de trabalho (criar atalho)".

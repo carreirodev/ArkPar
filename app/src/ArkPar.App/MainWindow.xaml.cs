@@ -26,6 +26,9 @@ public sealed partial class MainWindow : Window
         // The minimize, maximize and close buttons follow Windows' light or dark mode as it changes, like the rest.
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
 
+        // The taskbar and Alt+Tab take the window's icon, not the one inside ArkPar.exe.
+        AppWindow.SetIcon(App.IconPath);
+
         var scale = WindowDpi.Of(Win32Interop.GetWindowFromWindowId(AppWindow.Id)) / 96.0;
         AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(Width * scale), (int)(Height * scale)));
 

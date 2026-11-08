@@ -55,6 +55,7 @@ if ($LASTEXITCODE -ne 0) {
 $required = @(
     'ArkPar.exe'                # the app
     'ArkPar.pri'                # the screens' resources (see EnableMsixTooling above)
+    'Assets/ArkPar.ico'         # the window's and the notifications' icon
     'engine/par2j64.exe'        # the engine
     'coreclr.dll'               # .NET, carried inside
     'Microsoft.UI.Xaml.dll'     # Windows App SDK, carried inside

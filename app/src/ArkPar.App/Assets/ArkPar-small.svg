@@ -1,0 +1,12 @@
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- ArkPar's icon below 256 px: the WPC lamp simplified to thick strokes: the full lamp
+     (ArkPar-large.svg) fades out at these sizes. app/build-icon.ps1 renders it into ArkPar.ico. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="52" fill="#ef372a"/>
+  <path d="M96 168 C 70 150, 62 128, 62 110 A 66 66 0 0 1 194 110 C 194 128, 186 150, 160 168 Z"
+        fill="none" stroke="#fff" stroke-width="22" stroke-linejoin="round"/>
+  <g fill="#fff">
+    <rect x="94" y="184" width="68" height="20" rx="8"/>
+    <rect x="104" y="212" width="48" height="18" rx="8"/>
+  </g>
+</svg>

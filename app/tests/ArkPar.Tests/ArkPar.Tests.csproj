@@ -19,6 +19,11 @@
     <None Include="Engine\Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- The app's icon, checked by App/AppIconTests.cs. -->
+  <ItemGroup>
+    <None Include="..\..\src\ArkPar.App\Assets\ArkPar.ico" Link="Assets\ArkPar.ico" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The engine is built by app/build-engine.ps1, not by dotnet (it is a C++ project).
        When it exists, copy it next to the tests; EngineProcess fails with a clear message
        when it does not. -->

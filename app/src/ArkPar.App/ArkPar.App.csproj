@@ -7,6 +7,8 @@
     <RootNamespace>ArkPar.App</RootNamespace>
     <AssemblyName>ArkPar</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Embedded in ArkPar.exe: Explorer shows it for the exe and, through DefaultIcon, for .par2 files. -->
+    <ApplicationIcon>Assets\ArkPar.ico</ApplicationIcon>
 
     <!-- The engine is 64-bit only, and so is the GUI. -->
     <Platforms>x64</Platforms>
@@ -37,6 +39,14 @@
   <ItemGroup>
     <ProjectReference Include="..\ArkPar.Engine\ArkPar.Engine.csproj" />
     <ProjectReference Include="..\ArkPar.Screens\ArkPar.Screens.csproj" />
+  </ItemGroup>
+
+  <!-- Also a file next to the app, since the window and the notifications take their icon from a file
+       (App.IconPath). Drawn by app/build-icon.ps1 from the two SVGs beside it, which WinUI would
+       also ship, since it takes everything under Assets as content. -->
+  <ItemGroup>
+    <Content Remove="Assets\*.svg" />
+    <Content Update="Assets\ArkPar.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The engine ships next to the app, where EngineRun.DefaultEnginePath looks for it.

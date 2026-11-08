@@ -61,3 +61,9 @@ Build the package that takes ArkPar to another PC, `app/artifacts/ArkPar-win-x64
 ```
 pwsh -File app/build-package.ps1
 ```
+
+Redraw the app's icon, `app/src/ArkPar.App/Assets/ArkPar.ico`, after changing `ArkPar-small.svg` or `ArkPar-large.svg` beside it. It needs Chrome (pass `-Chrome` with its path if it is not in the default place); commit the `.ico` it writes:
+
+```
+pwsh -File app/build-icon.ps1
+```

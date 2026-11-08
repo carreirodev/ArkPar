@@ -39,10 +39,13 @@ internal sealed class TaskNotices
         _failed = failed;
         try
         {
-            // The name Windows shows above each notification.
+            // The name and icon Windows shows above each notification. The icon is written on every start, since the
+            // user may have moved the ArkPar folder (ADR-0002). Windows reads it from a file path (.ico, .png, .bmp or .jpg),
+            // as the Windows App SDK writes it for its own notifications.
             using (var app = Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\" + AppId))
             {
                 app.SetValue("DisplayName", "ArkPar");
+                app.SetValue("IconUri", App.IconPath);
             }
 
             _notifier = ToastNotificationManager.CreateToastNotifier(AppId);

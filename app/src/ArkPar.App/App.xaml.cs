@@ -23,6 +23,9 @@ public partial class App : Application
         Environment.ProcessorCount,
         ShellChange.NotifyAssociationsChanged);
 
+    /// <summary>ArkPar's icon as a file next to the app, for the window and the notifications.</summary>
+    internal static string IconPath { get; } = Path.Combine(AppContext.BaseDirectory, "Assets", "ArkPar.ico");
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         // The user may have moved the ArkPar folder since the association was made.

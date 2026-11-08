@@ -233,14 +233,16 @@ public sealed class CreateScreenTests : IDisposable
     {
         var (index, recoveryFile) = WriteSetOfTheSameName();
         await _screen.AddAsync([_trip]);
-        _trial.Last.Finish(TenPercent);
         await WaitUntilAsync(() => !_screen.IsReviewing);
 
         Assert.AreEqual("Pular · em dia", _screen.Items.Single().StatusText);
         Assert.IsFalse(_screen.CanCreate, "Nothing to create.");
         Assert.AreEqual("Nenhum conjunto será criado", _screen.SetsTitle);
+        Assert.IsEmpty(_trial.Trials, "Up to date: nothing to estimate.");
 
         _screen.Items.Single().IsIncluded = true;
+        Assert.IsFalse(_screen.CanCreate, "Not before the engine has said what it will make.");
+        _trial.Last.Finish(TenPercent);
 
         Assert.AreEqual("Refazer · em dia", _screen.Items.Single().StatusText);
         Assert.IsTrue(_screen.CanCreate);
@@ -295,6 +297,23 @@ public sealed class CreateScreenTests : IDisposable
         Assert.AreEqual("Não foi possível criar", _screen.Heading);
         Assert.AreEqual(BannerKind.Error, _screen.Banner?.Kind);
         Assert.AreEqual("0x70, Espaço insuficiente no disco.", _screen.Details);
+    }
+
+    [TestMethod]
+    public async Task AfterAFailedCreateTheSizesAreWorkedOutAgain()
+    {
+        await ReadyAsync();
+        var trials = _trial.Trials.Count;
+        var creating = _screen.CreateAsync();
+
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Error, 1, null, "0x70, Espaço insuficiente no disco."));
+        await creating;
+        await WaitUntilAsync(() => !_screen.IsReviewing);
+
+        Assert.HasCount(trials + 1, _trial.Trials, "A file may have gone meanwhile: the engine is asked again.");
+        Assert.IsFalse(_screen.CanCreate, "Not before it has said.");
+        _trial.Last.Finish(TenPercent);
+        Assert.IsTrue(_screen.CanCreate);
     }
 
     [TestMethod]
@@ -558,9 +577,9 @@ public sealed class CreateScreenTests : IDisposable
     private async Task ReadyAsync(CreateScreen screen)
     {
         await screen.AddAsync([_trip]);
-        _trial.Last.Finish(TenPercent);
         await WaitUntilAsync(() => !screen.IsReviewing);
         screen.Items.Single().IsIncluded = true;
+        _trial.FinishAll(TenPercent);
         Assert.IsTrue(screen.CanCreate);
     }
 

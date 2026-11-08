@@ -102,6 +102,82 @@ public sealed class CreateScreenReviewTests : IDisposable
     }
 
     [TestMethod]
+    public async Task ASetLeftOutIsNeverEstimated()
+    {
+        WriteSet(@"Outubro\Outubro.par2", @"Outubro\IMG_1001.JPG");
+        var october = Path.Combine(_root, @"Outubro\Outubro.par2");
+
+        await ReadyAsync(CreationMode.PerSubfolder);
+        _screen.Redundancy = 20;
+        _trial.FinishAll(OneSet);
+
+        Assert.IsTrue(_screen.CanCreate);
+        Assert.IsFalse(_trial.Trials.Any(trial => trial.Create.RecoveryFile == october), "Outubro is up to date: the create skips it.");
+        Assert.HasCount(3, _trial.Trials.Where(trial => trial.Create.RedundancyPercent == 20m), "Only the sets included, again for the new redundancy.");
+    }
+
+    [TestMethod]
+    public async Task LeavingOutTheSetWhoseEstimateFailedLetsTheOthersBeCreated()
+    {
+        await _screen.AddAsync([_root]);
+        _screen.Mode = CreationMode.PerSubfolder;
+        var december = Path.Combine(_root, @"Dezembro\Dezembro.par2");
+        while (_trial.Trials.Where(trial => !trial.Answer.IsCompleted && trial.Create.RecoveryFile != december).ToList() is { Count: > 0 } others)
+        {
+            others.ForEach(trial => trial.Finish(OneSet));
+        }
+
+        _trial.Trials.Single(trial => trial.Create.RecoveryFile == december && !trial.Answer.IsCompleted)
+            .Fail(new EngineTrialException(1, "input file is not found, IMG_1201.JPG"));
+        Assert.IsNotNull(_screen.EstimateProblem);
+        Assert.IsFalse(_screen.CanCreate);
+        var trials = _trial.Trials.Count;
+
+        _screen.Items.Single(item => item.Planned.Name == "Dezembro").IsIncluded = false;
+
+        Assert.IsNull(_screen.EstimateProblem);
+        Assert.IsTrue(_screen.CanCreate);
+        Assert.AreEqual("≈ 615 KB", _screen.SpaceText, "The other three, as the engine already said.");
+        Assert.HasCount(trials, _trial.Trials, "Nothing to ask the engine again.");
+    }
+
+    [TestMethod]
+    public async Task LeavingOutASetStillBeingEstimatedStopsWaitingForIt()
+    {
+        await _screen.AddAsync([_root]);
+        _screen.Mode = CreationMode.PerSubfolder;
+        var december = Path.Combine(_root, @"Dezembro\Dezembro.par2");
+        while (_trial.Trials.Where(trial => !trial.Answer.IsCompleted && trial.Create.RecoveryFile != december).ToList() is { Count: > 0 } others)
+        {
+            others.ForEach(trial => trial.Finish(OneSet));
+        }
+
+        var waiting = _trial.Trials.Single(trial => trial.Create.RecoveryFile == december && !trial.Answer.IsCompleted);
+        Assert.IsFalse(_screen.CanCreate);
+
+        _screen.Items.Single(item => item.Planned.Name == "Dezembro").IsIncluded = false;
+
+        Assert.IsTrue(waiting.Stop.IsCancellationRequested, "Its answer is not wanted.");
+        Assert.IsTrue(_screen.CanCreate);
+        Assert.AreEqual("≈ 615 KB", _screen.SpaceText);
+    }
+
+    [TestMethod]
+    public async Task TickingASetAgainDoesNotAskTheEngineAgain()
+    {
+        await ReadyAsync(CreationMode.PerSubfolder);
+        var trials = _trial.Trials.Count;
+        var december = _screen.Items.Single(item => item.Planned.Name == "Dezembro");
+
+        december.IsIncluded = false;
+        december.IsIncluded = true;
+
+        Assert.HasCount(trials, _trial.Trials);
+        Assert.IsTrue(_screen.CanCreate);
+        Assert.AreEqual("≈ 820 KB", _screen.SpaceText);
+    }
+
+    [TestMethod]
     [DataRow(CreationMode.SingleSet, "2026: Refazer · 1 arquivo novo")]
     [DataRow(CreationMode.PerSubfolder, "Novembro: Refazer · 1 arquivo novo")]
     [DataRow(CreationMode.PerFolder, "Novembro: Refazer · 1 arquivo novo")]
@@ -156,6 +232,7 @@ public sealed class CreateScreenReviewTests : IDisposable
 
         Assert.IsTrue(_screen.CanCreate);
         Assert.AreEqual("Pular · em dia", _screen.Items.Single(item => item.Planned.Name == "Outubro").StatusText);
+        Assert.IsFalse(_trial.Trials.Any(trial => trial.Create.RecoveryFile.EndsWith("Outubro.par2", StringComparison.Ordinal)), "Left out once compared: never estimated.");
     }
 
     [TestMethod]
@@ -468,12 +545,8 @@ public sealed class CreateScreenReviewTests : IDisposable
     {
         await _screen.AddAsync([_root]);
         _screen.Mode = mode;
-        foreach (var trial in _trial.Trials.Where(trial => !trial.Answer.IsCompleted))
-        {
-            trial.Finish(OneSet);
-        }
-
         await WaitUntilAsync(() => !_screen.IsReviewing);
+        _trial.FinishAll(OneSet);
         Assert.IsTrue(_screen.CanCreate);
     }
 

@@ -23,19 +23,22 @@ public sealed class ReviewedSet : Observable
         get => _comparison;
         internal set
         {
-            if (!Set(ref _comparison, value))
+            if (EqualityComparer<SetComparison>.Default.Equals(_comparison, value))
             {
                 return;
             }
 
             // A set that may be the only way back to a lost file, or that could not be read, waits for the user;
-            // one up to date is skipped.
+            // one up to date is skipped. Decided before the comparison is announced, so no one ever sees a set up
+            // to date as compared and included (the screen would ask the engine to estimate it).
+            _comparison = value;
             IsIncluded = value.State switch
             {
                 SetState.Missing => true,
                 SetState.Stale => !value.MayRecoverLosses,
                 _ => false,
             };
+            Announce(nameof(Comparison));
             Announce(nameof(IsCompared));
             Announce(nameof(StatusText));
             Announce(nameof(Caution));

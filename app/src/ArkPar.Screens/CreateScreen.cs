@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-using System.Runtime.ExceptionServices;
+using System.Collections.Concurrent;
 using ArkPar.Engine;
 
 namespace ArkPar.Screens;
@@ -66,7 +66,8 @@ public sealed class CreateScreen : Observable, IDisposable
     private bool _cancelRequested;
     private bool _disposed;
 
-    // The estimate: one round at a time, a trial for each set; a change while one runs stops it and asks for one more.
+    // The estimate: one round at a time, a trial for each set included that has none yet. A settings change while one
+    // runs stops it and asks for one more; a change in what is included only asks for one more.
     private bool _estimateAgain;
     private int _estimateNumber;
     private CancellationTokenSource? _estimateStop;
@@ -84,10 +85,20 @@ public sealed class CreateScreen : Observable, IDisposable
     private Choice _memory;
     private CreationEstimate? _estimate;
 
-    // The engine's estimate of each planned set, in the plan's order; Estimate covers the ones included.
-    private RecoveryEstimate[]? _setEstimates;
+    // The engine's estimate of each planned set it was asked about, by the trial asked (the set and the settings), for
+    // the plan shown: a box ticked again, or a setting put back, needs no new trial. A new plan starts empty. The
+    // answers come on the screen's thread (see EstimateSetsAsync); without one (the engine's own tests) two may land
+    // at once, where a count off by one shows nothing wrong but a broken dictionary would, hence concurrent.
+    private ConcurrentDictionary<EngineCommand.Create, RecoveryEstimate> _setEstimates = new();
     private bool _isEstimating;
     private int _estimatedSets;
+    private int _estimatingSets;
+
+    // The trials of the round under way.
+    private HashSet<EngineCommand.Create> _roundTrials = [];
+
+    // The trial whose failure is shown: it stands, not tried again, until a setting changes or its set is left out.
+    private EngineCommand.Create? _failedTrial;
     private string? _estimateProblem;
     private string _heading = "Criar";
     private string? _setProgressText;
@@ -260,11 +271,12 @@ public sealed class CreateScreen : Observable, IDisposable
             Announce(nameof(Destination));
             Announce(nameof(EstimatingText));
             Announce(nameof(ParFilesWarning));
-            _setEstimates = null;
+            StopEstimate();
+            _setEstimates = new();
             Estimate = null;
             EstimateProblem = null;
             _review.Start(value.Sets, Selection);
-            RequestEstimate();
+            EstimateIncluded();
         }
     }
 
@@ -514,8 +526,23 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
-    /// <summary>What the estimate is at: "Calculando…", or, with several sets, how many are done.</summary>
-    public string EstimatingText => Sets.Count > 1 ? $"Calculando… {_estimatedSets.ToString("N0", PtBrazil.Culture)} de {PtBrazil.Count(Sets.Count, "conjunto", "conjuntos")}" : "Calculando…";
+    /// <summary>What the estimate is at: "Calculando…", or, with several sets to work out, how many are done.</summary>
+    public string EstimatingText => _estimatingSets > 1
+        ? $"Calculando… {_estimatedSets.ToString("N0", PtBrazil.Culture)} de {PtBrazil.Count(_estimatingSets, "conjunto", "conjuntos")}"
+        : "Calculando…";
+
+    // How many sets the round under way works out.
+    private int EstimatingSets
+    {
+        get => _estimatingSets;
+        set
+        {
+            if (Set(ref _estimatingSets, value))
+            {
+                Announce(nameof(EstimatingText));
+            }
+        }
+    }
 
     private int EstimatedSets
     {
@@ -993,6 +1020,10 @@ public sealed class CreateScreen : Observable, IDisposable
         }
 
         Details = result.Details;
+
+        // A create that stopped may have been stopped by the files themselves (one gone, the disk full): the earlier
+        // estimates are not trusted, and every set included is worked out again.
+        _setEstimates = new();
         RequestEstimate();
     }
 
@@ -1023,6 +1054,9 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(ReplaceWarning));
                 ShowEstimateOfIncluded();
                 Announce(nameof(CanCreate));
+
+                // A set just included, or just compared, may have no estimate yet; one left out no longer needs its own.
+                EstimateIncluded();
                 break;
             case nameof(SetReview.IsComparing):
                 Announce(nameof(IsReviewing));
@@ -1037,34 +1071,40 @@ public sealed class CreateScreen : Observable, IDisposable
         }
     }
 
-    /// <summary>The estimate of the sets included, from the engine's estimate of every set; null while there is none or none is included.</summary>
+    /// <summary>The estimate of the sets included, for the current settings; null while one of them has none, or none is included.</summary>
     private void ShowEstimateOfIncluded()
     {
-        if (_setEstimates is not { } estimates || estimates.Length != Sets.Count)
+        var included = Included;
+        var estimates = new List<RecoveryEstimate>(included.Count);
+        foreach (var set in included)
         {
-            Estimate = null;
-            return;
+            if (!_setEstimates.TryGetValue(CommandFor(set), out var estimate))
+            {
+                Estimate = null;
+                return;
+            }
+
+            estimates.Add(estimate);
         }
 
-        var included = Items.Select((item, index) => (item.IsIncluded, Set: Sets[index], Estimate: estimates[index])).Where(set => set.IsIncluded).ToList();
-        Estimate = included.Count == 0 ? null : new CreationEstimate([.. included.Select(set => set.Set)], [.. included.Select(set => set.Estimate)]);
+        Estimate = included.Count == 0 ? null : new CreationEstimate(included, estimates);
     }
 
     private EngineCommand.Create CommandFor(PlannedSet set) =>
         new(set.RecoveryFile, set.BaseDirectory, set.Files, Redundancy, new CreateOptions(BlockSize.Value, RecoveryFileCount, Memory.Value));
 
+    /// <summary>A setting changed, or a create stopped: the answers under way are not wanted, and a new round follows.</summary>
     private void RequestEstimate()
     {
-        _estimateNumber++;
-        if (_disposed
-            || Stage is not (CreateStage.Ready or CreateStage.Created or CreateStage.Canceled or CreateStage.Failed)
-            || Sets.Count == 0 || SelectionProblem is not null)
+        if (!MayEstimate)
         {
             // An answer under way is not wanted: what it was for has changed.
-            _estimateAgain = false;
-            _estimateStop?.Cancel();
+            StopEstimate();
             return;
         }
+
+        _estimateNumber++;
+        _failedTrial = null;
 
         // IsEstimating is set before the loop's first wait, so a round that ends at once is never mistaken for one under way.
         if (IsEstimating)
@@ -1079,6 +1119,51 @@ public sealed class CreateScreen : Observable, IDisposable
         _ = EstimateAsync();
     }
 
+    /// <summary>
+    /// What is included changed: the round under way goes on, its answers still hold, and one more follows for the
+    /// sets it does not cover. A set left out is not asked about, so its failure no longer stops the others.
+    /// </summary>
+    private void EstimateIncluded()
+    {
+        if (!MayEstimate)
+        {
+            StopEstimate();
+            return;
+        }
+
+        if (IsEstimating)
+        {
+            var wanted = WantedTrials().ToHashSet();
+            if (_roundTrials.Any(trial => !wanted.Contains(trial) && !_setEstimates.ContainsKey(trial)))
+            {
+                // The round waits on a set just left out: its answer, or its failure, is not wanted. The answers
+                // already in stay. Again and stopped, in this order, as in RequestEstimate.
+                _estimateAgain = true;
+                _estimateStop?.Cancel();
+            }
+            else if (wanted.Any(trial => !_roundTrials.Contains(trial) && !_setEstimates.ContainsKey(trial)))
+            {
+                _estimateAgain = true;
+            }
+
+            return;
+        }
+
+        // The loop shows every failure on the screen itself.
+        _ = EstimateAsync();
+    }
+
+    /// <summary>
+    /// The trial of each set included and compared: one still being compared may turn out up to date, and be left out.
+    /// </summary>
+    private IEnumerable<EngineCommand.Create> WantedTrials() =>
+        Items.Where(item => item.IsIncluded && item.IsCompared).Select(item => CommandFor(item.Planned));
+
+    private bool MayEstimate =>
+        !_disposed
+        && Stage is (CreateStage.Ready or CreateStage.Created or CreateStage.Canceled or CreateStage.Failed)
+        && Sets.Count > 0 && SelectionProblem is null;
+
     private async Task EstimateAsync()
     {
         IsEstimating = true;
@@ -1087,17 +1172,34 @@ public sealed class CreateScreen : Observable, IDisposable
             do
             {
                 _estimateAgain = false;
+                if (_failedTrial is { } failed && WantedTrials().Contains(failed))
+                {
+                    // The failure shown still stands: asking again would only repeat it.
+                    break;
+                }
+
                 var number = _estimateNumber;
-                var sets = Sets;
+                var estimates = _setEstimates;
+                var trials = WantedTrials().Where(trial => !estimates.ContainsKey(trial)).ToList();
+                _roundTrials = [.. trials];
                 using var stop = new CancellationTokenSource();
                 _estimateStop = stop;
                 try
                 {
-                    var estimates = await EstimateSetsAsync(sets, stop.Token).ConfigureAwait(true);
-                    if (number == _estimateNumber)
+                    var answer = await EstimateSetsAsync(trials, estimates, stop.Token).ConfigureAwait(true);
+                    if (number != _estimateNumber)
+                    {
+                        continue;
+                    }
+
+                    _failedTrial = answer?.Trial;
+                    if (answer is { Failure: var failure })
+                    {
+                        ShowEstimateFailure(failure);
+                    }
+                    else
                     {
                         var clearDetails = _detailsFromEstimate;
-                        _setEstimates = estimates;
                         ShowEstimateOfIncluded();
                         EstimateProblem = null;
                         if (clearDetails)
@@ -1109,18 +1211,15 @@ public sealed class CreateScreen : Observable, IDisposable
                 }
                 catch (OperationCanceledException) when (stop.IsCancellationRequested)
                 {
-                    // Stopped because what was chosen changed: its answer is not wanted, but a newer one may be.
+                    // Stopped because a setting or what was chosen changed: its answer is not wanted, but a newer one may be.
                     continue;
                 }
                 catch (Exception failure)
                 {
+                    // Not a trial's: shown all the same, with its details.
                     if (number == _estimateNumber)
                     {
-                        _setEstimates = null;
-                        Estimate = null;
-                        EstimateProblem = "Não foi possível calcular o tamanho com estes ajustes.";
-                        Details = failure is EngineTrialException trial ? trial.Output : failure.ToString();
-                        _detailsFromEstimate = true;
+                        ShowEstimateFailure(failure);
                     }
                 }
                 finally
@@ -1132,36 +1231,49 @@ public sealed class CreateScreen : Observable, IDisposable
         }
         finally
         {
+            _roundTrials = [];
             IsEstimating = false;
         }
     }
 
-    /// <summary>
-    /// The engine's trial of each set. A few run at once: each is a short engine run that reads only the files'
-    /// sizes. The first that fails stops the others, and its failure is thrown.
-    /// </summary>
-    private async Task<RecoveryEstimate[]> EstimateSetsAsync(IReadOnlyList<PlannedSet> sets, CancellationToken stop)
+    private void ShowEstimateFailure(Exception failure)
     {
-        var estimates = new RecoveryEstimate[sets.Count];
+        Estimate = null;
+        EstimateProblem = "Não foi possível calcular o tamanho com estes ajustes.";
+        Details = failure is EngineTrialException trial ? trial.Output : failure.ToString();
+        _detailsFromEstimate = true;
+    }
+
+    /// <summary>
+    /// Runs the engine's <paramref name="trials"/>, keeping each answer in <paramref name="estimates"/> as it comes.
+    /// A few run at once: each is a short engine run that reads only the files' sizes. The first that fails stops
+    /// the others and is returned; the answers already in stay. Null when every trial answered.
+    /// </summary>
+    private async Task<(EngineCommand.Create Trial, Exception Failure)?> EstimateSetsAsync(
+        List<EngineCommand.Create> trials,
+        ConcurrentDictionary<EngineCommand.Create, RecoveryEstimate> estimates,
+        CancellationToken stop)
+    {
         var next = 0;
+        EstimatingSets = trials.Count;
         EstimatedSets = 0;
-        Exception? firstFailure = null;
+        (EngineCommand.Create Trial, Exception Failure)? firstFailure = null;
         using var round = CancellationTokenSource.CreateLinkedTokenSource(stop);
 
         // Several trials wait at once, but every step between the waits runs on the screen's thread
         // (ConfigureAwait(true)), one at a time: the shared counters need no locking.
         async Task EstimateNextAsync()
         {
-            for (var index = next++; index < sets.Count && !round.IsCancellationRequested; index = next++)
+            for (var index = next++; index < trials.Count && !round.IsCancellationRequested; index = next++)
             {
                 try
                 {
-                    estimates[index] = await _runTrial(CommandFor(sets[index]), round.Token).ConfigureAwait(true);
+                    estimates[trials[index]] = await _runTrial(trials[index], round.Token).ConfigureAwait(true);
                 }
                 catch (Exception failure) when (failure is not OperationCanceledException || !round.IsCancellationRequested)
                 {
-                    // Kept and thrown once the others have stopped; the screen shows it.
-                    firstFailure ??= failure;
+                    // Kept and returned once the others have stopped; the screen shows it.
+                    firstFailure ??= (trials[index], failure);
                     round.Cancel();
                     return;
                 }
@@ -1172,25 +1284,21 @@ public sealed class CreateScreen : Observable, IDisposable
 
         try
         {
-            await Task.WhenAll(Enumerable.Range(0, Math.Min(sets.Count, Environment.ProcessorCount)).Select(_ => EstimateNextAsync())).ConfigureAwait(true);
+            await Task.WhenAll(Enumerable.Range(0, Math.Min(trials.Count, Environment.ProcessorCount)).Select(_ => EstimateNextAsync())).ConfigureAwait(true);
         }
         catch (OperationCanceledException) when (round.IsCancellationRequested)
         {
-            // The others, stopped: by a newer change (thrown below) or by the first failure (thrown below).
+            // The others, stopped: by a newer change (thrown below) or by the first failure (returned below).
         }
 
         stop.ThrowIfCancellationRequested();
-        if (firstFailure is not null)
-        {
-            ExceptionDispatchInfo.Throw(firstFailure);
-        }
-
-        return estimates;
+        return firstFailure;
     }
 
     private void StopEstimate()
     {
         _estimateNumber++;
+        _failedTrial = null;
         _estimateAgain = false;
         _estimateStop?.Cancel();
     }

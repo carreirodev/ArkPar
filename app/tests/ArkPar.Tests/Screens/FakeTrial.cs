@@ -13,6 +13,15 @@ internal sealed class FakeTrial
 
     public PendingTrial Last => _trials[^1];
 
+    /// <summary>Answers every trial still waiting with <paramref name="estimate"/>, and the ones asked meanwhile, until none waits.</summary>
+    public void FinishAll(RecoveryEstimate estimate)
+    {
+        while (_trials.Where(trial => !trial.Answer.IsCompleted).ToList() is { Count: > 0 } waiting)
+        {
+            waiting.ForEach(trial => trial.Finish(estimate));
+        }
+    }
+
     public Task<RecoveryEstimate> RunAsync(EngineCommand.Create create, CancellationToken stop)
     {
         var trial = new PendingTrial(create, stop);

@@ -276,17 +276,13 @@ public sealed class CreateScreenModeTests : IDisposable
     {
         await screen.AddAsync([_trip]);
         screen.Mode = mode;
-        foreach (var trial in _trial.Trials.Where(trial => !trial.Answer.IsCompleted))
-        {
-            trial.Finish(Trip);
-        }
-
         await WaitUntilAsync(() => !screen.IsReviewing);
         foreach (var item in screen.Items)
         {
             item.IsIncluded = true;
         }
 
+        _trial.FinishAll(Trip);
         Assert.IsTrue(screen.CanCreate);
     }
 

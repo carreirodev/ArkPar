@@ -6,6 +6,7 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.Windows.Storage.Pickers;
 using Windows.ApplicationModel.DataTransfer;
 
@@ -124,13 +125,13 @@ public sealed partial class CreatePage : UserControl
         await AddAsync(items.Select(item => item.Path).Where(path => !string.IsNullOrEmpty(path)));
     }
 
-    private async void OnChooseFiles(object sender, RoutedEventArgs e)
+    private async void OnChooseFiles(Hyperlink sender, HyperlinkClickEventArgs e)
     {
         var picked = await new FileOpenPicker(_window).PickMultipleFilesAsync();
         await AddAsync(picked.Select(file => file.Path));
     }
 
-    private async void OnChooseFolder(object sender, RoutedEventArgs e)
+    private async void OnChooseFolder(Hyperlink sender, HyperlinkClickEventArgs e)
     {
         var picked = await new FolderPicker(_window).PickSingleFolderAsync();
         if (picked is not null)

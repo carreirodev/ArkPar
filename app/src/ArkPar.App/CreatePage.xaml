@@ -85,12 +85,14 @@
                         StrokeDashArray="4,3"
                         RadiusX="7"
                         RadiusY="7" />
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="16,12">
-                        <TextBlock Text="Arraste arquivos ou pastas para cá, ou escolha no disco:" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <HyperlinkButton Content="arquivos" Click="OnChooseFiles" />
-                        <TextBlock Text="ou" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <HyperlinkButton Content="uma pasta" Click="OnChooseFolder" />
-                    </StackPanel>
+                    <!-- One sentence with the links inside it, so a narrow window wraps it instead of cutting it. -->
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Margin="16,12"
+                        TextWrapping="Wrap"
+                        TextAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"><Run Text="Arraste arquivos ou pastas para cá, ou escolha no disco: " /><Hyperlink UnderlineStyle="None" Click="OnChooseFiles">arquivos</Hyperlink><Run Text=" ou " /><Hyperlink UnderlineStyle="None" Click="OnChooseFolder">uma pasta</Hyperlink></TextBlock>
                 </Grid>
 
                 <!-- Reading a big folder takes a moment. -->

@@ -329,6 +329,7 @@ public sealed class CreateScreenReviewTests : IDisposable
         var january = WriteSet("Janeiro.par2", "capa.jpg", "IMG_0101.JPG");
         File.Delete(Path.Combine(_root, "IMG_0101.JPG"));
         File.WriteAllBytes(Path.Combine(_root, @"Outubro\Outubro.arkpar-novo.par2"), new byte[10]);
+        File.WriteAllBytes(Path.Combine(_root, @"Outubro\Outubro.arkpar-pronto.par2"), new byte[10]);
 
         await ReadyAsync(CreationMode.PerFile);
         await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
@@ -336,7 +337,7 @@ public sealed class CreateScreenReviewTests : IDisposable
         Assert.AreEqual("Janeiro.par2 (2026): 1 arquivo removido; ainda protege 1 que está no disco, use Verificar e reparar", Describe(_screen.OrphanedSets), "Novembro's set covers files still there.");
         Assert.AreEqual(january, _screen.OrphanedSets.Single().Path);
         Assert.Contains(Path.Combine(_root, @"Novembro\Novembro.par2"), _listing.Asked, "Listed to know.");
-        Assert.IsFalse(_listing.Asked.Any(file => file.Contains(".arkpar-novo", StringComparison.Ordinal)), "A set being written is not one.");
+        Assert.IsFalse(_listing.Asked.Any(file => file.Contains(".arkpar-", StringComparison.Ordinal)), "A set being written, or not yet renamed, is not one.");
         Assert.AreEqual("5 conjuntos serão criados", _screen.SetsTitle);
     }
 

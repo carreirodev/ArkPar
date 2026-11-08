@@ -367,7 +367,7 @@ public sealed class CreateScreenTests : IDisposable
             new Banner(BannerKind.Error, "Este conjunto já está sendo criado em outra janela do ArkPar.", "Espere ela terminar e crie de novo."),
             windowB.Banner);
         Assert.HasCount(1, _engine.Runs, "No engine started in window B.");
-        Assert.HasCount(20, File.ReadAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2")), "Window A's new set is untouched.");
+        Assert.HasCount(20, File.ReadAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.arkpar-pronto.par2")), "Window A's new set is untouched.");
 
         recycling.Set();
         await creatingA;
@@ -427,7 +427,7 @@ public sealed class CreateScreenTests : IDisposable
         }
 
         Assert.AreEqual(CreateStage.Canceled, _screen.Stage);
-        StringAssert.Contains(_screen.Banner?.Detail, "apague os que começam com \"07 - Viagem Bahia.arkpar-novo\"");
+        StringAssert.Contains(_screen.Banner?.Detail, "apague os que começam com \"07 - Viagem Bahia.arkpar-\"");
         Assert.IsNotNull(_screen.Details);
     }
 
@@ -450,7 +450,7 @@ public sealed class CreateScreenTests : IDisposable
 
         CollectionAssert.AreEqual(new[] { index }, Directory.GetFiles(_trip, "*.arkpar-novo*"), "Only the held file stays.");
         Assert.AreEqual(CreateStage.Canceled, _screen.Stage);
-        StringAssert.Contains(_screen.Banner?.Detail, "apague os que começam com \"07 - Viagem Bahia.arkpar-novo\"");
+        StringAssert.Contains(_screen.Banner?.Detail, "apague os que começam com \"07 - Viagem Bahia.arkpar-\"");
     }
 
     [TestMethod]
@@ -617,10 +617,66 @@ public sealed class CreateScreenTests : IDisposable
 
         Assert.AreEqual(CreateStage.Failed, screen.Stage);
         Assert.AreEqual(
-            new Banner(BannerKind.Error, "Não foi possível tirar o conjunto anterior da pasta.", "Confira se algum dos arquivos dele está aberto em outro programa. O novo conjunto ficou na pasta como \"07 - Viagem Bahia.arkpar-novo.par2\"."),
+            new Banner(BannerKind.Error, "Não foi possível tirar o conjunto anterior da pasta.", "Confira se algum dos arquivos dele está aberto em outro programa. O novo conjunto ficou na pasta como \"07 - Viagem Bahia.arkpar-pronto.par2\"."),
             screen.Banner);
         Assert.HasCount(10, File.ReadAllBytes(index), "The set there stays.");
-        Assert.HasCount(20, File.ReadAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2")), "The new set is whole, so it stays too.");
+        Assert.HasCount(20, File.ReadAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.arkpar-pronto.par2")), "The new set is whole, so it stays too.");
+    }
+
+    [TestMethod]
+    public async Task ANewSetThatCannotBeNamedReadyIsRemovedAndTheSetThereKept()
+    {
+        var (index, recoveryFile) = WriteSetOfTheSameName();
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+        _engine.Last.WriteSet(indexSize: 20);
+        var draft = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2");
+        var draftRecoveryFile = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.vol0+10.par2");
+
+        // The draft's index, renamed last, held by another program, as an antivirus scanning it would.
+        using (new FileStream(draft, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+            await creating;
+        }
+
+        Assert.AreEqual(CreateStage.Failed, _screen.Stage);
+        Assert.AreEqual(
+            new Banner(
+                BannerKind.Error,
+                "Não foi possível guardar o novo conjunto.",
+                "Confira se algum arquivo .par2 da pasta está aberto em outro programa. O conjunto anterior continua na pasta. Arquivos incompletos ficaram na pasta; apague os que começam com \"07 - Viagem Bahia.arkpar-\" e terminam em .par2."),
+            _screen.Banner);
+        Assert.IsEmpty(_recycled);
+        Assert.HasCount(10, File.ReadAllBytes(index), "The set there is untouched.");
+        Assert.HasCount(10, File.ReadAllBytes(recoveryFile), "The set there is untouched.");
+        Assert.IsFalse(File.Exists(draftRecoveryFile), "The draft's file not held is removed, under its own name.");
+        Assert.IsEmpty(Directory.GetFiles(_trip, "*.arkpar-pronto*"), "Nothing left named ready.");
+    }
+
+    [TestMethod]
+    public async Task AReadyDraftLeftNextToTheSetIsRemovedAndTheSetMade()
+    {
+        // The app closed hard after naming the new set ready, before the set there went: that one is whole still.
+        var (index, _) = WriteSetOfTheSameName();
+        var ready = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-pronto.par2");
+        var readyRecoveryFile = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-pronto.vol0+24.par2");
+        File.WriteAllBytes(ready, new byte[30]);
+        File.WriteAllBytes(readyRecoveryFile, new byte[30]);
+        await ReadyAsync();
+
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+
+        Assert.IsFalse(File.Exists(ready) || File.Exists(readyRecoveryFile), "What was left is gone before the engine writes.");
+        _engine.Last.WriteSet(indexSize: 20);
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await creating;
+
+        Assert.AreEqual(CreateStage.Created, _screen.Stage, _screen.Details);
+        CollectionAssert.AreEquivalent(new[] { index, Path.Combine(_trip, "07 - Viagem Bahia.vol0+10.par2") }, Directory.GetFiles(_trip, "*.par2"));
+        Assert.HasCount(20, File.ReadAllBytes(index), "The new set, under its final name.");
     }
 
     [TestMethod]
@@ -684,12 +740,12 @@ public sealed class CreateScreenTests : IDisposable
 
         Assert.AreEqual(CreateStage.Failed, _screen.Stage);
         Assert.IsEmpty(_engine.Runs, "Nothing written next to it.");
-        Assert.HasCount(30, File.ReadAllBytes(draft), "Nothing removed while one is held: the other window's set stays whole.");
+        Assert.HasCount(30, File.ReadAllBytes(draft), "Nothing removed while one is held.");
         Assert.AreEqual(
             new Banner(
                 BannerKind.Error,
                 "Não foi possível apagar os arquivos incompletos de uma criação anterior.",
-                "Confira se algum arquivo .par2 da pasta está aberto em outro programa. O conjunto anterior continua na pasta. Arquivos incompletos ficaram na pasta; apague os que começam com \"07 - Viagem Bahia.arkpar-novo\" e terminam em .par2."),
+                "Confira se algum arquivo .par2 da pasta está aberto em outro programa. O conjunto anterior continua na pasta. Arquivos incompletos ficaram na pasta; apague os que começam com \"07 - Viagem Bahia.arkpar-\" e terminam em .par2."),
             _screen.Banner);
         StringAssert.Contains(_screen.Details, Path.GetFileName(piece));
         Assert.IsEmpty(_recycled);
@@ -698,20 +754,46 @@ public sealed class CreateScreenTests : IDisposable
     }
 
     [TestMethod]
-    public async Task ADraftLeftByAnEarlierCreateIsNeverRemoved()
+    public async Task ADraftLeftHalfWrittenByAFirstCreateIsRemovedAndTheSetMade()
     {
-        // The set it replaced went, but the rename failed: the draft may be the only set of these photos.
+        // The computer went off while the engine wrote the first set of these photos: its index and a piece are there.
         var draft = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2");
+        var piece = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.vol0+24.par2");
         File.WriteAllBytes(draft, new byte[30]);
+        File.WriteAllBytes(piece, new byte[15]);
+        await ReadyAsync();
+
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+
+        Assert.IsFalse(File.Exists(draft) || File.Exists(piece), "What was left is gone before the engine writes.");
+        _engine.Last.WriteSet(indexSize: 20);
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await creating;
+
+        Assert.AreEqual(CreateStage.Created, _screen.Stage, _screen.Details);
+        CollectionAssert.AreEquivalent(new[] { RecoveryFile, Path.Combine(_trip, "07 - Viagem Bahia.vol0+10.par2") }, Directory.GetFiles(_trip, "*.par2"));
+    }
+
+    [TestMethod]
+    public async Task AReadyDraftLeftByAnEarlierCreateIsNeverRemoved()
+    {
+        // The set it replaced went, but the rename failed: the ready draft may be the only set of these photos.
+        var ready = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-pronto.par2");
+        File.WriteAllBytes(ready, new byte[30]);
         await ReadyAsync();
 
         await _screen.CreateAsync();
 
         Assert.AreEqual(CreateStage.Failed, _screen.Stage);
         Assert.IsEmpty(_engine.Runs, "Nothing written over it.");
-        Assert.HasCount(30, File.ReadAllBytes(draft));
-        Assert.AreEqual("Já existe na pasta um conjunto \"07 - Viagem Bahia.arkpar-novo.par2\", deixado por uma criação anterior.", _screen.Banner?.Title);
-        StringAssert.Contains(_screen.Banner?.Detail, "confira-o em Verificar e reparar");
+        Assert.HasCount(30, File.ReadAllBytes(ready));
+        Assert.AreEqual(
+            new Banner(
+                BannerKind.Error,
+                "Já existe na pasta um conjunto \"07 - Viagem Bahia.arkpar-pronto.par2\", deixado por uma criação anterior.",
+                "Ele pode ser o único conjunto destes arquivos: confira-o em Verificar e reparar, e então apague-o ou tire \".arkpar-pronto\" do nome dos arquivos dele."),
+            _screen.Banner);
     }
 
     [TestMethod]

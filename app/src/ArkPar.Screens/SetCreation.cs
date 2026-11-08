@@ -35,9 +35,10 @@ internal sealed record SetResult(SetEnd End, string? Note, string? Details)
 
 /// <summary>
 /// Makes one recovery set without putting the set of the same name at risk: the engine writes the new set under
-/// a draft name (<c>Viagem.arkpar-novo.par2</c>), and only once it is made does the set there go (to the Recycle
-/// Bin, or deleted on a drive without one) and the new one take its name. A create that fails, is canceled or is
-/// ended by the window closing removes only the draft. Every failure ends in a <see cref="SetResult"/>, not thrown.
+/// a draft name (<c>Viagem.arkpar-novo.par2</c>). Once it is made, the draft is named ready
+/// (<c>Viagem.arkpar-pronto.par2</c>), and only then does the set there go (to the Recycle Bin, or deleted on a
+/// drive without one) and the new one take its name. A create that fails, is canceled or is ended by the window
+/// closing removes only the draft. Every failure ends in a <see cref="SetResult"/>, not thrown.
 /// </summary>
 internal sealed class SetCreation(
     EngineCommand.Create create,
@@ -48,19 +49,30 @@ internal sealed class SetCreation(
     /// <summary>Added to the set's name while the engine writes it: "Viagem" is written as "Viagem.arkpar-novo".</summary>
     internal const string DraftSuffix = ".arkpar-novo";
 
+    /// <summary>
+    /// Added to the set's name once the engine made it whole, until it takes the name of the set there: "Viagem"
+    /// is "Viagem.arkpar-pronto" then. A draft still named <see cref="DraftSuffix"/> is never whole (WPC-416).
+    /// </summary>
+    internal const string ReadySuffix = ".arkpar-pronto";
+
     /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
     private readonly EngineCommand.Create _draft =
         new(DraftOf(create.RecoveryFile), create.BaseDirectory, create.SourceFiles, create.RedundancyPercent, create.Options);
+
+    /// <summary>The ready draft's index: "Viagem.arkpar-pronto.par2".</summary>
+    private readonly string _ready = NamedWith(create.RecoveryFile, ReadySuffix);
     private IEngineRun? _run;
 
     /// <summary>The set's files already on disk, e.g. of a set of the same name made before: creating replaces them.</summary>
     public static IReadOnlyList<string> Replaced(PlannedSet set) => Selection.RecoverySetFiles(set.RecoveryFile);
 
     /// <summary>The draft's index for <paramref name="recoveryFile"/>: "Viagem.arkpar-novo.par2" for "Viagem.par2".</summary>
-    internal static string DraftOf(string recoveryFile) =>
-        Path.Combine(Path.GetDirectoryName(recoveryFile) ?? "", Path.GetFileNameWithoutExtension(recoveryFile) + DraftSuffix + Selection.RecoveryExtension);
+    internal static string DraftOf(string recoveryFile) => NamedWith(recoveryFile, DraftSuffix);
+
+    private static string NamedWith(string recoveryFile, string suffix) =>
+        Path.Combine(Path.GetDirectoryName(recoveryFile) ?? "", Path.GetFileNameWithoutExtension(recoveryFile) + suffix + Selection.RecoveryExtension);
 
     /// <param name="replaces">Whether a set of the same name is there (<see cref="Replaced"/>), read just before.</param>
     /// <param name="mayStart">Whether the engine may still start: not after Cancel, or once the window closed.</param>
@@ -109,18 +121,18 @@ internal sealed class SetCreation(
         IEngineRun run;
         try
         {
-            // A draft already there was left by an earlier create: one the app closed hard on, a file held when it
-            // was removed, or a whole set whose rename failed. One folder listing: without a draft, the engine starts at once.
-            if (Selection.RecoverySetFiles(_draft.RecoveryFile).Count > 0)
+            // A draft already there was left by an earlier create: one the app or the computer went off on, a file
+            // held when it was removed, or a whole set whose rename failed. Without one, the engine starts at once.
+            if (PartialFiles().Count > 0)
             {
                 if (MayBeTheOnlySet())
                 {
                     // Never removed here: the user checks it.
-                    var draftFile = Path.GetFileName(_draft.RecoveryFile);
+                    var readyFile = Path.GetFileName(_ready);
                     return new SetResult(SetEnd.Failed, keptNote, null)
                     {
-                        Title = $"Já existe na pasta um conjunto \"{draftFile}\", deixado por uma criação anterior.",
-                        Hint = $"Ele pode ser o único conjunto destes arquivos: confira-o em Verificar e reparar, e então apague-o ou tire \"{DraftSuffix}\" do nome dos arquivos dele.",
+                        Title = $"Já existe na pasta um conjunto \"{readyFile}\", deixado por uma criação anterior.",
+                        Hint = $"Ele pode ser o único conjunto destes arquivos: confira-o em Verificar e reparar, e então apague-o ou tire \"{ReadySuffix}\" do nome dos arquivos dele.",
                     };
                 }
 
@@ -175,7 +187,7 @@ internal sealed class SetCreation(
         EndRun(runChanged);
         if (result.Outcome == EngineOutcome.Completed)
         {
-            return await TakeOverAsync(activityChanged).ConfigureAwait(true);
+            return await TakeOverAsync(keptNote, activityChanged).ConfigureAwait(true);
         }
 
         var partial = await RemovePartialFilesAsync().ConfigureAwait(true);
@@ -223,12 +235,15 @@ internal sealed class SetCreation(
         first is null ? second : second is null ? first : first + separator + second;
 
     /// <summary>
-    /// Whether the draft left by an earlier create may be the only set of these files: whole, the set it replaced
-    /// gone but the rename not done. Never while the set's index is there. Never without the draft's index either:
-    /// the rename moves it last and puts everything back if it fails, so a whole draft always keeps it. The engine
-    /// writes the index first, so a draft half written on a first create also passes for whole, and is kept too.
+    /// Whether the draft left by an earlier create may be the only set of these files: ready, the set it replaced
+    /// gone but the rename not done. Never while the set's index is there. Never without the ready draft's index
+    /// either: each rename moves it last and puts everything back if it fails, so a ready draft always keeps it. A
+    /// draft not yet named ready, even with its index, is never whole: the engine writes the index first.
     /// </summary>
-    private bool MayBeTheOnlySet() => File.Exists(_draft.RecoveryFile) && !File.Exists(create.RecoveryFile);
+    private bool MayBeTheOnlySet() => File.Exists(_ready) && !File.Exists(create.RecoveryFile);
+
+    /// <summary>The files an earlier create of this set left: its draft's, ready or not.</summary>
+    private List<string> PartialFiles() => [.. Selection.RecoverySetFiles(_draft.RecoveryFile), .. Selection.RecoverySetFiles(_ready)];
 
     private void EndRun(Action<IEngineRun?> runChanged)
     {
@@ -237,11 +252,27 @@ internal sealed class SetCreation(
         runChanged(null);
     }
 
-    /// <summary>The draft is a whole set: the set there goes, and the draft takes its name.</summary>
-    private async Task<SetResult> TakeOverAsync(Action<string> activityChanged)
+    /// <summary>The draft is a whole set: it is named ready, the set there goes, and the draft takes its name.</summary>
+    /// <param name="keptNote">What to say of the set there if this stops before it is touched.</param>
+    private async Task<SetResult> TakeOverAsync(string? keptNote, Action<string> activityChanged)
     {
-        // From here on nothing removes the new set: a failure keeps it, under the draft's name if need be.
-        var draftFile = Path.GetFileName(_draft.RecoveryFile);
+        try
+        {
+            await Task.Run(() => RenameSet(_draft.RecoveryFile, _ready)).ConfigureAwait(true);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            // Nothing touched yet: it ends as a create that failed, with only the draft removed.
+            var leftover = await RemovePartialFilesAsync().ConfigureAwait(true);
+            return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(leftover), " "), Join(failure.ToString(), leftover))
+            {
+                Title = "Não foi possível guardar o novo conjunto.",
+                Hint = "Confira se algum arquivo .par2 da pasta está aberto em outro programa.",
+            };
+        }
+
+        // From here on nothing removes the new set: a failure keeps it, under the ready draft's name if need be.
+        var readyFile = Path.GetFileName(_ready);
         try
         {
             var replaced = await Task.Run(() => Selection.RecoverySetFiles(create.RecoveryFile)).ConfigureAwait(true);
@@ -254,7 +285,7 @@ internal sealed class SetCreation(
         catch (Exception failure)
         {
             // Shown with its details: a file of the set there held by another program, or its removal refused in Windows' dialog.
-            return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{draftFile}\".", failure.ToString())
+            return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{readyFile}\".", failure.ToString())
             {
                 Title = "Não foi possível tirar o conjunto anterior da pasta.",
                 Hint = "Confira se algum dos arquivos dele está aberto em outro programa.",
@@ -263,11 +294,11 @@ internal sealed class SetCreation(
 
         try
         {
-            await Task.Run(RenameDraft).ConfigureAwait(true);
+            await Task.Run(() => RenameSet(_ready, create.RecoveryFile)).ConfigureAwait(true);
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{draftFile}\"; tire \"{DraftSuffix}\" do nome para usá-lo.", failure.ToString())
+            return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{readyFile}\"; tire \"{ReadySuffix}\" do nome para usá-lo.", failure.ToString())
             {
                 Title = "Não foi possível dar o nome final ao novo conjunto.",
                 Hint = "Confira se algum arquivo .par2 da pasta está aberto em outro programa.",
@@ -302,35 +333,36 @@ internal sealed class SetCreation(
     }
 
     /// <summary>
-    /// Gives the draft's files the set's name, its index last, so the set is never found half renamed. A rename
-    /// that fails puts back the ones already done, and the draft stays whole under its own name.
+    /// Gives the files of the set whose index is <paramref name="from"/> the name of <paramref name="to"/>, the
+    /// index last, so the set is never found half renamed. A rename that fails puts back the ones already done,
+    /// and the set stays whole under its own name.
     /// </summary>
-    private void RenameDraft()
+    private static void RenameSet(string from, string to)
     {
-        var draftName = Path.GetFileNameWithoutExtension(_draft.RecoveryFile);
-        var name = Path.GetFileNameWithoutExtension(create.RecoveryFile);
-        var renamed = new List<(string Draft, string Final)>();
+        var fromName = Path.GetFileNameWithoutExtension(from);
+        var toName = Path.GetFileNameWithoutExtension(to);
+        var renamed = new List<(string From, string To)>();
         try
         {
-            foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile).OrderBy(file => file.Equals(_draft.RecoveryFile, StringComparison.OrdinalIgnoreCase)))
+            foreach (var file in Selection.RecoverySetFiles(from).OrderBy(file => file.Equals(from, StringComparison.OrdinalIgnoreCase)))
             {
-                var final = Path.Combine(Path.GetDirectoryName(file) ?? "", name + Path.GetFileName(file)[draftName.Length..]);
-                File.Move(file, final);
-                renamed.Add((file, final));
+                var renamedFile = Path.Combine(Path.GetDirectoryName(file) ?? "", toName + Path.GetFileName(file)[fromName.Length..]);
+                File.Move(file, renamedFile);
+                renamed.Add((file, renamedFile));
             }
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            foreach (var (draft, final) in renamed)
+            foreach (var (original, renamedFile) in renamed)
             {
-                File.Move(final, draft);
+                File.Move(renamedFile, original);
             }
 
             throw;
         }
     }
 
-    /// <summary>Removes what a create that did not finish left behind: every file of the draft's name, and only those.</summary>
+    /// <summary>Removes what a create that did not finish left behind: every file of the draft's names, and only those.</summary>
     /// <param name="onlyIfNoneHeld">Removes none of them while one is held by another program.</param>
     /// <returns>Null when all went; otherwise why some could not, which the screen then shows.</returns>
     private async Task<string?> RemovePartialFilesAsync(bool onlyIfNoneHeld = false)
@@ -342,7 +374,7 @@ internal sealed class SetCreation(
                 if (onlyIfNoneHeld)
                 {
                     // Opened alone, at once: fails on a file another program has open.
-                    foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile))
+                    foreach (var file in PartialFiles())
                     {
                         using var alone = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None);
                     }
@@ -367,7 +399,7 @@ internal sealed class SetCreation(
     private void DeletePartialFiles()
     {
         var failures = new List<Exception>();
-        foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile))
+        foreach (var file in PartialFiles())
         {
             try
             {
@@ -413,5 +445,6 @@ internal sealed class SetCreation(
 
     private string? LeftoverText(string? leftover) => leftover is null
         ? null
-        : $"Arquivos incompletos ficaram na pasta; apague os que começam com \"{Path.GetFileNameWithoutExtension(_draft.RecoveryFile)}\" e terminam em .par2.";
+        // What the draft's names share, ready or not: "Viagem.arkpar-".
+        : $"Arquivos incompletos ficaram na pasta; apague os que começam com \"{Path.GetFileNameWithoutExtension(create.RecoveryFile)}.arkpar-\" e terminam em .par2.";
 }

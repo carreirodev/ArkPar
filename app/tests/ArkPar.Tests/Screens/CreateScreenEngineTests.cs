@@ -122,7 +122,7 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
         await screen.CreateAsync().WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
 
         Assert.AreEqual(CreateStage.Created, screen.Stage, screen.Details);
-        Assert.IsEmpty(Directory.GetFiles(_folder, "*" + "arkpar-novo*", SearchOption.AllDirectories), "No draft left.");
+        Assert.IsEmpty(Directory.GetFiles(_folder, "*.arkpar-*", SearchOption.AllDirectories), "No draft left, ready or not.");
         using var verify = new VerifyScreen((command, progress) => EngineRun.Start(command, progress, EngineProcess.ExePath));
         await verify.VerifyAsync(Path.Combine(_folder, "viagem", "viagem.par2")).WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
         Assert.AreEqual(new FileCounts(Complete: 2, Damaged: 0, Missing: 0, Misnamed: 0), verify.Counts, verify.Details);

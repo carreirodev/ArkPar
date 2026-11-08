@@ -70,6 +70,40 @@ internal sealed class SetCreation(
     public async Task<SetResult> CreateAsync(
         bool replaces, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
     {
+        SetLock? setLock;
+        try
+        {
+            // Taken here, at once, like the folder listing below: without a draft, the engine starts at once.
+            setLock = SetLock.TryTake(create.RecoveryFile);
+        }
+        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        {
+            return new SetResult(SetEnd.Failed, replaces ? "O conjunto anterior continua na pasta." : null, failure.ToString())
+            {
+                Title = "Não foi possível iniciar a criação.",
+            };
+        }
+
+        // Another window is making this set: its draft is no leftover, and nothing here is touched.
+        if (setLock is null)
+        {
+            return new SetResult(SetEnd.Failed, null, null)
+            {
+                Title = "Este conjunto já está sendo criado em outra janela do ArkPar.",
+                Hint = "Espere ela terminar e crie de novo.",
+            };
+        }
+
+        using (setLock)
+        {
+            return await CreateHeldAsync(replaces, mayStart, runChanged, activityChanged, progress).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary><see cref="CreateAsync"/>, once this window holds the set's <see cref="SetLock"/>.</summary>
+    private async Task<SetResult> CreateHeldAsync(
+        bool replaces, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
+    {
         // Said whenever the set is not made: the set there was never touched.
         var keptNote = replaces ? "O conjunto anterior continua na pasta." : null;
         IEngineRun run;
@@ -90,8 +124,8 @@ internal sealed class SetCreation(
                     };
                 }
 
-                // Pieces of no use (WPC-409): removed, and the set is made. One still held stops the create before the
-                // engine starts, with none removed: it may be another ArkPar window's engine writing this same set.
+                // Pieces of no use (WPC-409): removed, and the set is made. One still held by another program (an
+                // antivirus scanning it...) stops the create before the engine starts, with none removed.
                 if (await RemovePartialFilesAsync(onlyIfNoneHeld: true).ConfigureAwait(true) is { } held)
                 {
                     return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(held), " "), held)

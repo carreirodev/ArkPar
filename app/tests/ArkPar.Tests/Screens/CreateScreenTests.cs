@@ -341,6 +341,53 @@ public sealed class CreateScreenTests : IDisposable
     }
 
     [TestMethod]
+    public async Task ASecondWindowCreatingTheSameSetStopsAndTouchesNothing()
+    {
+        // Window A made its set and is sending the one there to the Recycle Bin when Create is clicked in window B.
+        var (index, recoveryFile) = WriteSetOfTheSameName();
+        using var recycling = new ManualResetEventSlim();
+        using var windowA = NewScreen(files =>
+        {
+            recycling.Wait(TimeSpan.FromSeconds(10));
+            Recycle(files);
+        });
+        await ReadyAsync(windowA);
+        var creatingA = windowA.CreateAsync();
+        await WaitUntilAsync(() => windowA.CanControl);
+        _engine.Last.WriteSet(indexSize: 20);
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await WaitUntilAsync(() => windowA.ActivityText == "Levando o conjunto anterior para a Lixeira");
+
+        using var windowB = NewScreen(Recycle);
+        await ReadyAsync(windowB);
+        await windowB.CreateAsync();
+
+        Assert.AreEqual(CreateStage.Failed, windowB.Stage);
+        Assert.AreEqual(
+            new Banner(BannerKind.Error, "Este conjunto já está sendo criado em outra janela do ArkPar.", "Espere ela terminar e crie de novo."),
+            windowB.Banner);
+        Assert.HasCount(1, _engine.Runs, "No engine started in window B.");
+        Assert.HasCount(20, File.ReadAllBytes(Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2")), "Window A's new set is untouched.");
+
+        recycling.Set();
+        await creatingA;
+        Assert.AreEqual(CreateStage.Created, windowA.Stage, windowA.Details);
+        CollectionAssert.AreEquivalent(new[] { index, Path.Combine(_trip, "07 - Viagem Bahia.vol0+10.par2") }, Directory.GetFiles(_trip, "*.par2"));
+        Assert.IsFalse(File.Exists(recoveryFile), "The set from before went to the Recycle Bin.");
+
+        // Once window A is done, window B can make the set.
+        await ReadyAsync(windowB);
+        var creatingB = windowB.CreateAsync();
+        await WaitUntilAsync(() => windowB.CanControl);
+        Assert.HasCount(2, _engine.Runs, "The engine starts in window B.");
+        _engine.Last.WriteSet(indexSize: 30);
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await creatingB;
+        Assert.AreEqual(CreateStage.Created, windowB.Stage, windowB.Details);
+        Assert.HasCount(30, File.ReadAllBytes(index));
+    }
+
+    [TestMethod]
     public async Task ClosingWhileTheReplacedSetGoesToTheRecycleBinLeavesNoEngineRunning()
     {
         WriteSetOfTheSameName();
@@ -629,7 +676,7 @@ public sealed class CreateScreenTests : IDisposable
         File.WriteAllBytes(piece, new byte[30]);
         await ReadyAsync();
 
-        // Held by another program: an antivirus scanning it, or the engine of another ArkPar window making this same set.
+        // Held by another program, as an antivirus scanning it would.
         using (new FileStream(piece, FileMode.Open, FileAccess.Read, FileShare.None))
         {
             await _screen.CreateAsync();

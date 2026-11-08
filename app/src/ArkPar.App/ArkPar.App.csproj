@@ -41,11 +41,13 @@
     <ProjectReference Include="..\ArkPar.Screens\ArkPar.Screens.csproj" />
   </ItemGroup>
 
-  <!-- Also a file next to the app, since the window and the notifications take their icon from a file
-       (App.IconPath). Drawn by app/build-icon.ps1 from the two SVGs beside it, which WinUI would
-       also ship, since it takes everything under Assets as content. -->
+  <!-- The icon is also a file next to the app, since the window and the notifications take their icon from a file
+       (App.IconPath). Drawn by app/build-icon.ps1 from the two ArkPar-*.svg beside it, which WinUI would
+       also ship, since it takes everything under Assets as content: only the WPC Solutions logos at the end of
+       Settings ship as SVG (made by app/build-logo.ps1). -->
   <ItemGroup>
     <Content Remove="Assets\*.svg" />
+    <Content Include="Assets\wpc-logo-*.svg" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Update="Assets\ArkPar.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 

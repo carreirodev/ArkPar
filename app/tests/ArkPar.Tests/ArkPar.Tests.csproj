@@ -19,9 +19,10 @@
     <None Include="Engine\Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- The app's icon, checked by App/AppIconTests.cs. -->
+  <!-- The app's icon and the WPC Solutions logos, checked by App/AppIconTests.cs and App/AppLogoTests.cs. -->
   <ItemGroup>
     <None Include="..\..\src\ArkPar.App\Assets\ArkPar.ico" Link="Assets\ArkPar.ico" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\ArkPar.App\Assets\wpc-logo-*.svg" LinkBase="Assets" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- The engine is built by app/build-engine.ps1, not by dotnet (it is a C++ project).

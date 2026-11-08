@@ -56,6 +56,8 @@ $required = @(
     'ArkPar.exe'                # the app
     'ArkPar.pri'                # the screens' resources (see EnableMsixTooling above)
     'Assets/ArkPar.ico'         # the window's and the notifications' icon
+    'Assets/wpc-logo-light-background.svg'  # the WPC Solutions logo at the end of Settings, light mode
+    'Assets/wpc-logo-dark-background.svg'   # the same, dark mode
     'engine/par2j64.exe'        # the engine
     'coreclr.dll'               # .NET, carried inside
     'Microsoft.UI.Xaml.dll'     # Windows App SDK, carried inside

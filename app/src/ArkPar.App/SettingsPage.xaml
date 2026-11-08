@@ -7,6 +7,21 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:ArkPar.App">
 
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <!-- The WPC Solutions logo follows Windows' light or dark mode as it changes. "Default" serves dark mode
+                 and high contrast, which fall back to it. The SVGs are made by app/build-logo.ps1. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SvgImageSource x:Key="WpcLogo" UriSource="ms-appx:///Assets/wpc-logo-dark-background.svg" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SvgImageSource x:Key="WpcLogo" UriSource="ms-appx:///Assets/wpc-logo-light-background.svg" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
     <Border
         Background="{ThemeResource LayerFillColorDefaultBrush}"
         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
@@ -122,6 +137,25 @@
                         TextWrapping="Wrap"
                         IsTextSelectionEnabled="True" />
                 </Expander>
+
+                <!-- Last on the screen, after the technical details too, where Windows apps put "About". -->
+                <TextBlock Text="Sobre" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,16,0,0" />
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel Spacing="8" HorizontalAlignment="Left">
+                        <!-- The negative margin keeps the logo in line with the text, with room for the focus border. -->
+                        <HyperlinkButton
+                            NavigateUri="https://wpcsolutions.com.br"
+                            AutomationProperties.Name="WPC Solutions, abrir wpcsolutions.com.br"
+                            ToolTipService.ToolTip="wpcsolutions.com.br"
+                            Padding="4"
+                            Margin="-4">
+                            <!-- 160 px wide at most; narrower when the window leaves less room. -->
+                            <Image Source="{ThemeResource WpcLogo}" MaxWidth="160" Stretch="Uniform" />
+                        </HyperlinkButton>
+                        <TextBlock Text="Desenvolvido por WPC Solutions" Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
     </Border>

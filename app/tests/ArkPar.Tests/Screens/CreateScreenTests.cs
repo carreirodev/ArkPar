@@ -385,6 +385,72 @@ public sealed class CreateScreenTests : IDisposable
     }
 
     [TestMethod]
+    public async Task APartialFileThatCannotBeDeletedDoesNotKeepTheOthersThere()
+    {
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+        _engine.Last.WriteSet();
+        _engine.Last.WriteSet(recoveryFileEnd: ".vol10+10.par2");
+        var index = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2");
+
+        // The index comes first in the folder's order; held by another program, as an antivirus scanning it would.
+        using (new FileStream(index, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, null, "Cancel"));
+            await creating;
+        }
+
+        CollectionAssert.AreEqual(new[] { index }, Directory.GetFiles(_trip, "*.arkpar-novo*"), "Only the held file stays.");
+        Assert.AreEqual(CreateStage.Canceled, _screen.Stage);
+        StringAssert.Contains(_screen.Banner?.Detail, "apague os que começam com \"07 - Viagem Bahia.arkpar-novo\"");
+    }
+
+    [TestMethod]
+    public async Task ClosingWhileTheFirstPartialFileIsHeldStillDeletesTheOthers()
+    {
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+        _engine.Last.WriteSet();
+        var index = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2");
+
+        // The index comes first in the folder's order; held by another program while the window closes.
+        using (new FileStream(index, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var closing = Task.Run(_screen.Dispose);
+            await WaitUntilAsync(() => _engine.Last.Disposed);
+            _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 1, null, ""));
+            await closing;
+            await creating;
+        }
+
+        CollectionAssert.AreEqual(new[] { index }, Directory.GetFiles(_trip, "*.arkpar-novo*"), "Only the held file stays.");
+    }
+
+    [TestMethod]
+    public async Task EveryPartialFileThatCannotBeDeletedIsInTheDetails()
+    {
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+        _engine.Last.WriteSet();
+        var index = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.par2");
+        var recoveryFile = Path.Combine(_trip, "07 - Viagem Bahia.arkpar-novo.vol0+10.par2");
+
+        using (new FileStream(index, FileMode.Open, FileAccess.Read, FileShare.None))
+        using (new FileStream(recoveryFile, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            _engine.Last.Finish(new EngineResult(EngineOutcome.Canceled, 2, null, "Cancel"));
+            await creating;
+        }
+
+        Assert.AreEqual(CreateStage.Canceled, _screen.Stage);
+        StringAssert.Contains(_screen.Details, Path.GetFileName(index));
+        StringAssert.Contains(_screen.Details, Path.GetFileName(recoveryFile));
+    }
+
+    [TestMethod]
     public async Task ClosingWhileAPartialFileIsHeldClosesWithoutAnErrorAndLeavesTheSetThere()
     {
         var (index, recoveryFile) = WriteSetOfTheSameName();

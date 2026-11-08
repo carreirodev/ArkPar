@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+using System.Runtime.ExceptionServices;
 using ArkPar.Engine;
 
 namespace ArkPar.Screens;
@@ -289,11 +290,34 @@ internal sealed class SetCreation(
         }
     }
 
+    /// <summary>
+    /// Deletes every partial file it can: one held by another program does not keep the others there.
+    /// </summary>
+    /// <exception cref="IOException">Some files stayed: the one failure as it was, or several inside this one.</exception>
+    /// <exception cref="UnauthorizedAccessException">The one file that stayed was refused.</exception>
     private void DeletePartialFiles()
     {
+        var failures = new List<Exception>();
         foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile))
         {
-            DeleteOnceReleased(file);
+            try
+            {
+                DeleteOnceReleased(file);
+            }
+            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(failure);
+            }
+        }
+
+        if (failures is [var only])
+        {
+            ExceptionDispatchInfo.Throw(only);
+        }
+
+        if (failures.Count > 1)
+        {
+            throw new IOException($"{failures.Count} partial files could not be deleted.", new AggregateException(failures));
         }
     }
 

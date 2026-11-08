@@ -50,6 +50,12 @@ public sealed partial class Selection
     /// <summary>What was chosen, as a tree: each folder with its folders, then its files.</summary>
     public IReadOnlyList<SelectionNode> Tree { get; private init; } = [];
 
+    /// <summary>
+    /// The folders inside the folders chosen, at any depth, that hold a <c>.par2</c> file, even those with nothing
+    /// else left to protect: where sets made before may be.
+    /// </summary>
+    public IReadOnlyList<string> SetFolders { get; private init; } = [];
+
     /// <summary>Folders that could not be read (no permission), so their files are not in the set.</summary>
     public IReadOnlyList<string> Unreadable { get; private init; } = [];
 
@@ -70,9 +76,10 @@ public sealed partial class Selection
 
         var files = new List<FileInfo>();
         var unreadable = new List<string>();
+        var setFolders = new List<string>();
         var tree = roots
             .Select(root => Directory.Exists(root)
-                ? ReadFolder(new DirectoryInfo(root), files, unreadable) with { StartsExpanded = true }
+                ? ReadFolder(new DirectoryInfo(root), files, unreadable, setFolders) with { StartsExpanded = true }
                 : ReadFile(new FileInfo(root), files))
             .OrderBy(node => node.IsFolder ? 0 : 1)
             .ThenBy(node => node.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -92,6 +99,7 @@ public sealed partial class Selection
             TotalSize = tree.Sum(node => node.Size),
             Tree = tree,
             Unreadable = unreadable,
+            SetFolders = setFolders,
             Problem = files.Count == 0 ? "Não há arquivos para proteger no que foi escolhido." : null,
         };
     }
@@ -168,17 +176,18 @@ public sealed partial class Selection
         return SelectionNode.File(file.Name, file.Length);
     }
 
-    private static SelectionNode ReadFolder(DirectoryInfo folder, List<FileInfo> files, List<string> unreadable)
+    private static SelectionNode ReadFolder(DirectoryInfo folder, List<FileInfo> files, List<string> unreadable, List<string> setFolders)
     {
         var folders = new List<SelectionNode>();
         var folderFiles = new List<SelectionNode>();
+        var holdsSet = false;
         try
         {
             foreach (var entry in folder.EnumerateFileSystemInfos().Where(entry => (entry.Attributes & Skipped) == 0 && !IsLink(entry)))
             {
                 if (entry is DirectoryInfo subfolder)
                 {
-                    var node = ReadFolder(subfolder, files, unreadable);
+                    var node = ReadFolder(subfolder, files, unreadable, setFolders);
                     if (node.FileCount > 0)
                     {
                         folders.Add(node);
@@ -188,12 +197,21 @@ public sealed partial class Selection
                 {
                     folderFiles.Add(ReadFile((FileInfo)entry, files));
                 }
+                else
+                {
+                    holdsSet = true;
+                }
             }
         }
         catch (UnauthorizedAccessException)
         {
             // Reported on the screen (Unreadable), and the set covers the rest.
             unreadable.Add(folder.FullName);
+        }
+
+        if (holdsSet)
+        {
+            setFolders.Add(folder.FullName);
         }
 
         IReadOnlyList<SelectionNode> children =

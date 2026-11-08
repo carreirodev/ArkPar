@@ -199,6 +199,134 @@ public sealed class CreateScreenReviewTests : IDisposable
         Assert.AreEqual($"{index}:\nvalid file is not found", _screen.Details);
     }
 
+    [TestMethod]
+    public async Task ASetWhosePhotoIsGoneIsAWarningTheCreateNeverMakes()
+    {
+        await ReadyAsync(CreationMode.PerFile);
+        await CreateAllAsync();
+        File.Delete(Path.Combine(_root, @"Novembro\IMG_1101.JPG"));
+        var runs = _engine.Runs.Count;
+
+        await _screen.AddAsync([_root]);
+        await WaitUntilAsync(() => !_screen.IsReviewing && !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual(@"IMG_1101.JPG.par2 (2026\Novembro): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets));
+        Assert.IsTrue(_screen.HasOrphanedSets);
+        Assert.IsFalse(_screen.Items.Any(item => item.Planned.Name == "IMG_1101.JPG"));
+        Assert.AreEqual("Nenhum conjunto será criado", _screen.SetsTitle, "The other photos are protected and unchanged.");
+        Assert.IsFalse(_screen.CanCreate);
+        Assert.AreEqual(runs, _engine.Runs.Count);
+    }
+
+    [TestMethod]
+    public async Task ASetInAFolderLeftWithNoFilesIsAWarning()
+    {
+        await ReadyAsync(CreationMode.PerFolder);
+        await CreateAllAsync();
+        File.Delete(Path.Combine(_root, @"Dezembro\IMG_1201.JPG"));
+
+        await _screen.AddAsync([_root]);
+        await WaitUntilAsync(() => !_screen.IsReviewing && !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual(@"Dezembro.par2 (2026\Dezembro): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets));
+        Assert.AreEqual("2026, Novembro, Feriado, Outubro", string.Join(", ", _screen.Items.Select(item => item.Planned.Name)));
+    }
+
+    [TestMethod]
+    public async Task ASetOfAnotherModeIsAWarningOnlyWhenItLostFiles()
+    {
+        // In January one set per subfolder; in March, per file. Novembro's set still has its photos; January's does not.
+        WriteSet(@"Novembro\Novembro.par2", @"Novembro\IMG_1101.JPG", @"Novembro\Feriado\IMG_1115.JPG");
+        WritePhoto("IMG_0101.JPG");
+        var january = WriteSet("Janeiro.par2", "capa.jpg", "IMG_0101.JPG");
+        File.Delete(Path.Combine(_root, "IMG_0101.JPG"));
+        File.WriteAllBytes(Path.Combine(_root, @"Outubro\Outubro.arkpar-novo.par2"), new byte[10]);
+
+        await ReadyAsync(CreationMode.PerFile);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual("Janeiro.par2 (2026): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets), "Novembro's set covers files still there.");
+        Assert.AreEqual(january, _screen.OrphanedSets.Single().Path);
+        Assert.Contains(Path.Combine(_root, @"Novembro\Novembro.par2"), _listing.Asked, "Listed to know.");
+        Assert.IsFalse(_listing.Asked.Any(file => file.Contains(".arkpar-novo", StringComparison.Ordinal)), "A set being written is not one.");
+        Assert.AreEqual("5 conjuntos serão criados", _screen.SetsTitle);
+    }
+
+    [TestMethod]
+    public async Task CreatingDoesNotWaitForTheOtherSetsAndStopsLookingForThem()
+    {
+        WritePhoto("IMG_0101.JPG");
+        WriteSet("Janeiro.par2", "IMG_0101.JPG");
+        File.Delete(Path.Combine(_root, "IMG_0101.JPG"));
+        var lists = new TaskCompletionSource();
+        _listing.Gate = lists.Task;
+
+        await ReadyAsync(CreationMode.PerFolder);
+
+        Assert.IsTrue(_screen.IsFindingOrphanedSets);
+        Assert.IsFalse(_screen.HasOrphanedSets);
+        Assert.IsTrue(_screen.CanCreate, "No set of the folders' names is there: nothing to compare.");
+
+        var creating = CreateAllAsync();
+        Assert.IsFalse(_screen.IsFindingOrphanedSets, "The engine is the create's: the search stops, and starts again after it.");
+
+        lists.SetResult();
+        await creating;
+        await WaitUntilAsync(() => !_screen.IsReviewing && !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual("Janeiro.par2 (2026): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets));
+    }
+
+    [TestMethod]
+    public async Task ChangingTheModeWhileFindingTheOtherSetsStartsAgain()
+    {
+        WritePhoto("IMG_0101.JPG");
+        WriteSet("Janeiro.par2", "IMG_0101.JPG");
+        File.Delete(Path.Combine(_root, "IMG_0101.JPG"));
+        var lists = new TaskCompletionSource();
+        _listing.Gate = lists.Task;
+        await ReadyAsync(CreationMode.PerFolder);
+        var announced = new List<string?>();
+        _screen.PropertyChanged += (_, e) => announced.Add(e.PropertyName);
+
+        _screen.Mode = CreationMode.PerSubfolder;
+        lists.SetResult();
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+        await Task.Delay(50);
+
+        Assert.AreEqual("Janeiro.par2 (2026): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets), "Once: the answer to the earlier list is not wanted.");
+        Assert.Contains(nameof(CreateScreen.OrphanedSets), announced);
+    }
+
+    [TestMethod]
+    public async Task AnOtherSetThatCannotBeReadIsAWarningWithTheReason()
+    {
+        var index = WriteSet("Janeiro.par2");
+        _listing.Fails(index, "valid file is not found");
+
+        await ReadyAsync(CreationMode.PerSubfolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual("Janeiro.par2 (2026): Não foi possível ler o conjunto; o motivo está em Detalhes técnicos", Describe(_screen.OrphanedSets));
+        Assert.AreEqual($"{index}:\nvalid file is not found", _screen.Details);
+    }
+
+    [TestMethod]
+    public async Task AFolderChosenWithNoFilesLeftStillShowsItsSet()
+    {
+        var december = Path.Combine(_root, "Dezembro");
+        WriteSet(@"Dezembro\Dezembro.par2", @"Dezembro\IMG_1201.JPG");
+        File.Delete(Path.Combine(december, "IMG_1201.JPG"));
+
+        await _screen.AddAsync([december]);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+
+        Assert.IsNotNull(_screen.SelectionProblem);
+        Assert.AreEqual("Dezembro.par2 (Dezembro): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets));
+    }
+
+    private static string Describe(IEnumerable<OrphanedSet> sets) => string.Join("; ", sets.Select(set => $"{set.Name} ({set.Where}): {set.StatusText}"));
+
     /// <summary>Writes a set made before the photos changed, covering <paramref name="files"/> (paths under "2026").</summary>
     private string WriteSet(string index, params string[] files)
     {

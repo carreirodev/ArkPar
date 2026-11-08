@@ -188,7 +188,16 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(SelectionProblem));
                 Announce(nameof(ReplaceWarning));
                 Announce(nameof(CanCreate));
-                Plan = CreationPlan.For(value, Mode);
+                var plan = CreationPlan.For(value, Mode);
+                if (ReferenceEquals(plan, Plan))
+                {
+                    // Still no set to make (CreationPlan.Empty), but the folders chosen changed, and their orphaned sets with them.
+                    _review.Start(plan.Sets, value);
+                }
+                else
+                {
+                    Plan = plan;
+                }
             }
         }
     }
@@ -243,6 +252,7 @@ public sealed class CreateScreen : Observable, IDisposable
 
             Announce(nameof(Sets));
             Announce(nameof(HasSets));
+            Announce(nameof(HasSetList));
             Announce(nameof(SelectionProblem));
             Announce(nameof(SaveIn));
             Announce(nameof(Destination));
@@ -251,7 +261,7 @@ public sealed class CreateScreen : Observable, IDisposable
             _setEstimates = null;
             Estimate = null;
             EstimateProblem = null;
-            _review.Start(value.Sets);
+            _review.Start(value.Sets, Selection);
             RequestEstimate();
         }
     }
@@ -261,11 +271,25 @@ public sealed class CreateScreen : Observable, IDisposable
 
     public bool HasSets => Sets.Count > 0;
 
+    /// <summary>Whether the list of sets shows: there are sets to make, or orphaned sets to warn about.</summary>
+    public bool HasSetList => HasSets || HasOrphanedSets;
+
     /// <summary>
     /// One line for each of <see cref="Sets"/>: what is in its folder now, and whether the create makes it. A set
     /// up to date starts left out.
     /// </summary>
     public IReadOnlyList<ReviewedSet> Items => _review.Items;
+
+    /// <summary>
+    /// The orphaned sets in the folders chosen (GLOSSARY.md), each a warning below <see cref="Items"/>: the create
+    /// never makes them. Found after the sets are compared, so they may still be appearing once Criar is enabled.
+    /// </summary>
+    public IReadOnlyList<OrphanedSet> OrphanedSets => _review.OrphanedSets;
+
+    public bool HasOrphanedSets => OrphanedSets.Count > 0;
+
+    /// <summary>The engine is still listing the other sets in the folders chosen, to find the orphaned ones.</summary>
+    public bool IsFindingOrphanedSets => _review.IsFindingOrphanedSets;
 
     /// <summary>The sets the create will make: the ones included.</summary>
     public IReadOnlyList<PlannedSet> Included => _review.Included;
@@ -640,6 +664,9 @@ public sealed class CreateScreen : Observable, IDisposable
         var hasRecycleBin = HasRecycleBin;
         _cancelRequested = false;
         StopEstimate();
+
+        // The orphaned sets still being looked for: the engine is the create's now, and the review starts again after it.
+        _review.Stop();
         Stage = CreateStage.Creating;
         Heading = "Criando";
         Banner = null;
@@ -778,7 +805,7 @@ public sealed class CreateScreen : Observable, IDisposable
         Stage = CreateStage.Created;
         Heading = made.Count == 1 ? "Conjunto criado" : "Conjuntos criados";
         SetProgressText = null;
-        _review.Start(Sets);
+        _review.Start(Sets, Selection);
 
         var where = Selection.BaseDirectory;
         var results = made.Select(set => set.Result).ToList();
@@ -806,7 +833,7 @@ public sealed class CreateScreen : Observable, IDisposable
     private void ShowStopped(IReadOnlyList<PlannedSet> sets, PlannedSet set, int index, int made, SetResult result)
     {
         SetProgressText = null;
-        _review.Start(Sets);
+        _review.Start(Sets, Selection);
         if (result.End == SetEnd.Canceled)
         {
             Stage = CreateStage.Canceled;
@@ -842,6 +869,14 @@ public sealed class CreateScreen : Observable, IDisposable
         {
             case nameof(SetReview.Items):
                 Announce(nameof(Items));
+                break;
+            case nameof(SetReview.OrphanedSets):
+                Announce(nameof(OrphanedSets));
+                Announce(nameof(HasOrphanedSets));
+                Announce(nameof(HasSetList));
+                break;
+            case nameof(SetReview.IsFindingOrphanedSets):
+                Announce(nameof(IsFindingOrphanedSets));
                 break;
             case nameof(SetReview.Included):
                 Announce(nameof(Included));

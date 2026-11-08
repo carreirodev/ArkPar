@@ -6,13 +6,16 @@ namespace ArkPar.Screens;
 
 /// <summary>
 /// The list the Create screen shows before creating: each planned set, compared with the set of its name already
-/// in its folder, if any, and included or left out (<see cref="ReviewedSet.IsIncluded"/>). Use it from the
-/// screen's thread; it announces <see cref="Included"/> whenever what the create would make changes.
+/// in its folder, if any, and included or left out (<see cref="ReviewedSet.IsIncluded"/>). Below them, the
+/// orphaned sets in the folders chosen (<see cref="OrphanedSets"/>), only as warnings. Use it from the screen's
+/// thread; it announces <see cref="Included"/> whenever what the create would make changes.
 /// </summary>
 public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> listSet) : Observable
 {
     private IReadOnlyList<ReviewedSet> _items = [];
+    private IReadOnlyList<OrphanedSet> _orphanedSets = [];
     private bool _isComparing;
+    private bool _isFindingOrphanedSets;
     private int _comparedCount;
     private CancellationTokenSource? _stop;
 
@@ -38,6 +41,19 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
         }
     }
 
+    /// <summary>The orphaned sets found so far (GLOSSARY.md), by folder, then by name. The create never makes them.</summary>
+    public IReadOnlyList<OrphanedSet> OrphanedSets
+    {
+        get => _orphanedSets;
+        private set
+        {
+            if (Set(ref _orphanedSets, value))
+            {
+                Announce(nameof(Details));
+            }
+        }
+    }
+
     /// <summary>The sets the create would make, in the plan's order.</summary>
     public IReadOnlyList<PlannedSet> Included => [.. Items.Where(item => item.IsIncluded).Select(item => item.Planned)];
 
@@ -54,13 +70,21 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
         }
     }
 
+    /// <summary>
+    /// The engine is listing the other sets in the folders chosen, to find the orphaned ones. True only once
+    /// <see cref="IsComparing"/> ends, and creating does not wait for it: a create never touches a set of another name.
+    /// </summary>
+    public bool IsFindingOrphanedSets { get => _isFindingOrphanedSets; private set => Set(ref _isFindingOrphanedSets, value); }
+
     /// <summary>How far the comparing is, e.g. "Conferindo os conjuntos que já existem… 3 de 12".</summary>
     public string ComparingText => $"Conferindo os conjuntos que já existem… {_comparedCount.ToString("N0", PtBrazil.Culture)} de {Items.Count.ToString("N0", PtBrazil.Culture)}";
 
     /// <summary>Why sets already in the folders could not be read, in technical terms; null when every one could.</summary>
     public string? Details => Items
-        .Where(item => item.Comparison.Details is not null)
-        .Select(item => $"{item.Planned.RecoveryFile}:\n{item.Comparison.Details}")
+        .Select(item => (File: item.Planned.RecoveryFile, item.Comparison.Details))
+        .Concat(OrphanedSets.Select(set => (File: set.Path, set.Details)))
+        .Where(set => set.Details is not null)
+        .Select(set => $"{set.File}:\n{set.Details}")
         .Aggregate((string?)null, (all, details) => SetCreation.Join(all, details));
 
     private int ComparedCount
@@ -76,20 +100,25 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
     }
 
     /// <summary>
-    /// Compares <paramref name="sets"/> with what is in their folders, replacing the list. Each folder is read
-    /// here, once: a set with no files there is missing at once. Those that have some are listed by the engine,
-    /// a few at once, off this call; a later <see cref="Start"/> or <see cref="Stop"/> stops them.
+    /// Compares <paramref name="sets"/> with what is in their folders, replacing the list, then looks for the
+    /// orphaned sets in <see cref="Selection.SetFolders"/> of <paramref name="selection"/>. Each folder is read
+    /// here, once: a set with no files there is missing at once. The sets there are listed by the engine, a few at
+    /// once, off this call; a later <see cref="Start"/> or <see cref="Stop"/> stops them.
     /// </summary>
-    public void Start(IReadOnlyList<PlannedSet> sets)
+    public void Start(IReadOnlyList<PlannedSet> sets, Selection selection)
     {
         Stop();
         var items = sets.Select(set => new ReviewedSet(set)).ToList();
         var pending = new List<(ReviewedSet Item, IReadOnlyList<string> SetFiles)>();
+
+        // Each folder's sets by name; null for a folder that cannot be listed now.
+        var setsIn = new Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<string>>?>(StringComparer.OrdinalIgnoreCase);
         foreach (var folder in items.GroupBy(item => item.Planned.BaseDirectory, StringComparer.OrdinalIgnoreCase))
         {
             try
             {
                 var setsThere = Selection.SetFilesIn(folder.Key);
+                setsIn[folder.Key] = setsThere;
                 foreach (var item in folder)
                 {
                     if (setsThere.TryGetValue(item.Planned.Name, out var setFiles))
@@ -105,6 +134,7 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
             {
                 // A folder that cannot be listed now: its sets wait for the user, with the reason in Detalhes técnicos.
+                setsIn[folder.Key] = null;
                 foreach (var item in folder)
                 {
                     item.Comparison = new SetComparison(SetState.Unreadable, Details: failure.ToString());
@@ -112,21 +142,23 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
             }
         }
 
+        var (candidates, unreadable) = OrphanCandidatesOf(items, selection, setsIn);
         Items = items;
+        OrphanedSets = unreadable;
         ComparedCount = items.Count - pending.Count;
         Announce(nameof(ComparingText));
-        if (pending.Count == 0)
+        IsComparing = pending.Count > 0;
+        IsFindingOrphanedSets = pending.Count == 0 && candidates.Count > 0;
+        if (pending.Count == 0 && candidates.Count == 0)
         {
-            IsComparing = false;
             return;
         }
 
-        IsComparing = true;
         var stop = new CancellationTokenSource();
         _stop = stop;
 
         // The loop shows every failure on its item.
-        _ = CompareAsync(pending, stop);
+        _ = ReviewAsync(pending, candidates, stop);
     }
 
     /// <summary>Stops the comparing under way: its answers are no longer wanted.</summary>
@@ -135,47 +167,105 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
         _stop?.Cancel();
         _stop = null;
         IsComparing = false;
+        IsFindingOrphanedSets = false;
     }
 
-    private async Task CompareAsync(List<(ReviewedSet Item, IReadOnlyList<string> SetFiles)> pending, CancellationTokenSource stop)
+    /// <summary>
+    /// The sets in the folders chosen that no planned set has the name of, to list to know whether they are orphaned
+    /// (each as a set covering nothing, so every file it lists is moved out or removed); and a warning for each of
+    /// those folders that cannot be read.
+    /// </summary>
+    private static (List<(PlannedSet Set, IReadOnlyList<string> SetFiles)> Candidates, List<OrphanedSet> Unreadable) OrphanCandidatesOf(
+        List<ReviewedSet> items,
+        Selection selection,
+        Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<string>>?> setsIn)
     {
-        var next = 0;
-
-        // Several listings wait at once, but every step between the waits runs on the screen's thread
-        // (ConfigureAwait(true)), one at a time: the shared counters need no locking.
-        async Task CompareNextAsync()
+        var candidates = new List<(PlannedSet Set, IReadOnlyList<string> SetFiles)>();
+        var unreadable = new List<OrphanedSet>();
+        if (selection.BaseDirectory is not { } chosenFolder)
         {
-            for (var index = next++; index < pending.Count && !stop.IsCancellationRequested; index = next++)
+            return (candidates, unreadable);
+        }
+
+        var planned = items.Select(item => item.Planned.RecoveryFile).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var folder in selection.SetFolders)
+        {
+            var where = CreationPlan.WhereOf(folder, chosenFolder);
+            if (!setsIn.TryGetValue(folder, out var setsThere))
             {
-                var (item, setFiles) = pending[index];
-                SetComparison comparison;
                 try
                 {
-                    comparison = await SetComparison.CompareAsync(item.Planned, setFiles, listSet, stop.Token).ConfigureAwait(true);
+                    setsThere = Selection.SetFilesIn(folder);
                 }
-                catch (OperationCanceledException) when (stop.IsCancellationRequested)
+                catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
                 {
-                    return;
+                    unreadable.Add(new OrphanedSet(Selection.FolderName(folder), folder, where, "Não foi possível ler a pasta; o motivo está em Detalhes técnicos", failure.ToString()));
+                    continue;
                 }
+            }
 
-                // Stopped meanwhile (the mode changed...): this row and its count belong to a list no longer shown.
-                if (stop.IsCancellationRequested)
+            // A folder of planned sets that cannot be listed: they say so already.
+            if (setsThere is null)
+            {
+                continue;
+            }
+
+            foreach (var (name, setFiles) in setsThere)
+            {
+                var recoveryFile = Path.Combine(folder, name + Selection.RecoveryExtension);
+
+                // A set being written ("Viagem.arkpar-novo") is not one yet.
+                if (!planned.Contains(recoveryFile) && !name.EndsWith(SetCreation.DraftSuffix, StringComparison.OrdinalIgnoreCase))
                 {
-                    return;
+                    candidates.Add((new PlannedSet(recoveryFile, folder, [], 0) { Where = where }, setFiles));
                 }
-
-                item.Comparison = comparison;
-                ComparedCount++;
             }
         }
 
+        return (candidates, unreadable);
+    }
+
+    /// <summary>Compares the <paramref name="pending"/> planned sets, then lists the <paramref name="candidates"/> to find the orphaned sets.</summary>
+    private async Task ReviewAsync(
+        List<(ReviewedSet Item, IReadOnlyList<string> SetFiles)> pending,
+        List<(PlannedSet Set, IReadOnlyList<string> SetFiles)> candidates,
+        CancellationTokenSource stop)
+    {
         try
         {
-            await Task.WhenAll(Enumerable.Range(0, Math.Min(pending.Count, Environment.ProcessorCount)).Select(_ => CompareNextAsync())).ConfigureAwait(true);
+            await EachAsync(pending, stop, async set =>
+            {
+                if (await CompareAsync(set.Item.Planned, set.SetFiles, stop).ConfigureAwait(true) is { } comparison)
+                {
+                    set.Item.Comparison = comparison;
+                    ComparedCount++;
+                }
+            }).ConfigureAwait(true);
+            if (stop.IsCancellationRequested)
+            {
+                return;
+            }
+
+            // In this order, so the screen is never told that both are over while candidates remain.
+            IsFindingOrphanedSets = candidates.Count > 0;
+            IsComparing = false;
+            await EachAsync(candidates, stop, async candidate =>
+            {
+                if (await CompareAsync(candidate.Set, candidate.SetFiles, stop).ConfigureAwait(true) is { } comparison
+                    && OrphanedSetOf(candidate.Set, comparison) is { } orphaned)
+                {
+                    OrphanedSets =
+                    [
+                        .. OrphanedSets.Append(orphaned)
+                            .OrderBy(set => Path.GetDirectoryName(set.Path), StringComparer.CurrentCultureIgnoreCase)
+                            .ThenBy(set => set.Name, StringComparer.CurrentCultureIgnoreCase),
+                    ];
+                }
+            }).ConfigureAwait(true);
             if (!stop.IsCancellationRequested)
             {
                 _stop = null;
-                IsComparing = false;
+                IsFindingOrphanedSets = false;
             }
         }
         finally
@@ -183,6 +273,54 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
             stop.Dispose();
         }
     }
+
+    /// <summary>The comparison of the set there, whose files are <paramref name="setFiles"/>; null once stopped.</summary>
+    private async Task<SetComparison?> CompareAsync(PlannedSet set, IReadOnlyList<string> setFiles, CancellationTokenSource stop)
+    {
+        try
+        {
+            var comparison = await SetComparison.CompareAsync(set, setFiles, listSet, stop.Token).ConfigureAwait(true);
+
+            // Stopped meanwhile (the mode changed...): the answer belongs to a list no longer shown.
+            return stop.IsCancellationRequested ? null : comparison;
+        }
+        catch (OperationCanceledException) when (stop.IsCancellationRequested)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="step"/> on each of <paramref name="work"/>, several waiting at once, until done or stopped.
+    /// Every step between the waits runs on the screen's thread (ConfigureAwait(true)), one at a time: the shared
+    /// counters need no locking.
+    /// </summary>
+    private static Task EachAsync<T>(IReadOnlyList<T> work, CancellationTokenSource stop, Func<T, Task> step)
+    {
+        var next = 0;
+        async Task NextAsync()
+        {
+            for (var index = next++; index < work.Count && !stop.IsCancellationRequested; index = next++)
+            {
+                await step(work[index]).ConfigureAwait(true);
+            }
+        }
+
+        return Task.WhenAll(Enumerable.Range(0, Math.Min(work.Count, Environment.ProcessorCount)).Select(_ => NextAsync()));
+    }
+
+    /// <summary>The warning for a set no planned set has the name of: only when it lost files, or cannot be read.</summary>
+    private static OrphanedSet? OrphanedSetOf(PlannedSet set, SetComparison comparison) => comparison switch
+    {
+        { State: SetState.Unreadable } => new(
+            Path.GetFileName(set.RecoveryFile), set.RecoveryFile, set.Where, "Não foi possível ler o conjunto; o motivo está em Detalhes técnicos", comparison.Details),
+        { RemovedFiles: > 0 } => new(
+            Path.GetFileName(set.RecoveryFile),
+            set.RecoveryFile,
+            set.Where,
+            PtBrazil.Count(comparison.RemovedFiles, "arquivo removido", "arquivos removidos") + ", use Verificar e reparar"),
+        _ => null,
+    };
 
     private void OnItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {

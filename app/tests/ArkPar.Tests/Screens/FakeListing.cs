@@ -17,11 +17,15 @@ internal sealed partial class FakeListing
     /// <summary>The recovery files listed, in order.</summary>
     public IReadOnlyList<string> Asked => _asked;
 
-    /// <summary>The set whose index is <paramref name="recoveryFile"/> covers <paramref name="files"/>, at their size now.</summary>
-    public void Lists(string recoveryFile, params string[] files) =>
-        _answers[SetOf(recoveryFile)] = () => new SetListing(
-            Path.GetDirectoryName(recoveryFile)!,
-            files.ToDictionary(file => file, file => new FileInfo(file).Length, StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// The set whose index is <paramref name="recoveryFile"/> covers <paramref name="files"/>, at their size now,
+    /// as a set records them when made: deleting one later leaves it in the list.
+    /// </summary>
+    public void Lists(string recoveryFile, params string[] files)
+    {
+        var sizes = files.ToDictionary(file => file, file => new FileInfo(file).Length, StringComparer.OrdinalIgnoreCase);
+        _answers[SetOf(recoveryFile)] = () => new SetListing(Path.GetDirectoryName(recoveryFile)!, sizes);
+    }
 
     public void Fails(string recoveryFile, string output) =>
         _answers[SetOf(recoveryFile)] = () => throw new EngineListingException(1, output);

@@ -104,13 +104,17 @@ public sealed class CreationPlan
     ];
 
     /// <param name="chosenFolder">The folder holding what was chosen (<see cref="Selection.BaseDirectory"/>), where <see cref="PlannedSet.Where"/> starts.</param>
-    private static PlannedSet SetOf(string recoveryFile, string baseDirectory, IReadOnlyList<(string Path, long Size)> files, string chosenFolder)
-    {
-        var below = Path.GetRelativePath(chosenFolder, baseDirectory);
-        return new(recoveryFile, baseDirectory, [.. files.Select(file => file.Path)], files.Sum(file => file.Size))
+    private static PlannedSet SetOf(string recoveryFile, string baseDirectory, IReadOnlyList<(string Path, long Size)> files, string chosenFolder) =>
+        new(recoveryFile, baseDirectory, [.. files.Select(file => file.Path)], files.Sum(file => file.Size))
         {
-            Where = below == "." ? Selection.FolderName(chosenFolder) : Path.Combine(Selection.FolderName(chosenFolder), below),
+            Where = WhereOf(baseDirectory, chosenFolder),
         };
+
+    /// <summary><paramref name="folder"/>, from <paramref name="chosenFolder"/> holding it: "2019\07 - Viagem Bahia".</summary>
+    internal static string WhereOf(string folder, string chosenFolder)
+    {
+        var below = Path.GetRelativePath(chosenFolder, folder);
+        return below == "." ? Selection.FolderName(chosenFolder) : Path.Combine(Selection.FolderName(chosenFolder), below);
     }
 
     private static string? ProblemOf(IReadOnlyList<PlannedSet> sets, int maxFiles)

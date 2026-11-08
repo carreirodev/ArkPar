@@ -66,6 +66,18 @@ public sealed class SelectionTests
     }
 
     [TestMethod]
+    public void TheFoldersHoldingSetsAreNotedEvenWithNothingLeftToProtect()
+    {
+        var photo = Write("IMG_4469.JPG", 100);
+        Write("IMG_4469.JPG.par2", 100);
+        Write(@"Praia do Forte\Praia do Forte.vol0+3.par2", 100);
+        Write(@"Vídeos\VID_0033.MP4", 100);
+
+        CollectionAssert.AreEquivalent(new[] { _trip, Path.Combine(_trip, "Praia do Forte") }, Selection.Read([_trip]).SetFolders.ToArray());
+        Assert.HasCount(0, Selection.Read([photo]).SetFolders, "Only inside a folder chosen: the folder of a file chosen holds other things too.");
+    }
+
+    [TestMethod]
     public void SeveralItemsLiveInTheFolderThatHoldsThem()
     {
         var photo = Write("IMG_4469.JPG", 100);

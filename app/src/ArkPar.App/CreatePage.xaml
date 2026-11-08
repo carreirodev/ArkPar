@@ -254,14 +254,19 @@
 
                 <!--
                     The sets the create will make and where each goes, before Criar: each with what is in its folder now
-                    and a box to leave it out. A list, as per file can mean thousands.
+                    and a box to leave it out. A list, as per file can mean thousands. Below it, the orphaned sets, only
+                    as warnings: no box, as the create never makes them.
                 -->
-                <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.HasSets, Mode=OneWay}">
+                <Border Style="{StaticResource Card}" Visibility="{x:Bind Screen.HasSetList, Mode=OneWay}">
                     <StackPanel Spacing="10">
                         <TextBlock Text="{x:Bind Screen.SetsTitle, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind Screen.IsReviewing, Mode=OneWay}">
                             <ProgressRing IsActive="True" Width="14" Height="14" />
                             <TextBlock Text="{x:Bind Screen.ReviewingText, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind Screen.IsFindingOrphanedSets, Mode=OneWay}">
+                            <ProgressRing IsActive="True" Width="14" Height="14" />
+                            <TextBlock Text="Procurando conjuntos que perderam arquivos…" Style="{StaticResource SecondaryCaption}" TextWrapping="Wrap" />
                         </StackPanel>
                         <InfoBar
                             IsOpen="True"
@@ -301,6 +306,39 @@
                                                 Visibility="{x:Bind local:Ui.VisibleIfText(Caution), Mode=OneWay, FallbackValue=Collapsed}" />
                                         </StackPanel>
                                         <TextBlock Grid.Column="2" Text="{x:Bind Planned.Meta}" Style="{StaticResource SecondaryCaption}" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <ListView
+                            ItemsSource="{x:Bind Screen.OrphanedSets, Mode=OneWay}"
+                            SelectionMode="None"
+                            MaxHeight="200"
+                            Visibility="{x:Bind Screen.HasOrphanedSets, Mode=OneWay}"
+                            AutomationProperties.Name="Conjuntos que perderam arquivos">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="screens:OrphanedSet">
+                                    <Grid ColumnSpacing="12" Padding="0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon
+                                            Glyph="&#xE7BA;"
+                                            FontSize="16"
+                                            Margin="2,2,2,0"
+                                            VerticalAlignment="Top"
+                                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                            AutomationProperties.AccessibilityView="Raw" />
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Path}" />
+                                            <TextBlock Text="{x:Bind Where}" Style="{StaticResource SecondaryCaption}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Text="{x:Bind StatusText}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                TextWrapping="Wrap" />
+                                        </StackPanel>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>

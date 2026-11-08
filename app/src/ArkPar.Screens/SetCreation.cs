@@ -75,17 +75,31 @@ internal sealed class SetCreation(
         IEngineRun run;
         try
         {
-            // A draft already there was left by an earlier create: half written if the app closed hard, or whole if
-            // the set it replaced went but the rename did not, when it may be the only set of these files. Never
-            // removed here: the user checks it. One folder listing: without a draft, the engine starts at once.
+            // A draft already there was left by an earlier create: one the app closed hard on, a file held when it
+            // was removed, or a whole set whose rename failed. One folder listing: without a draft, the engine starts at once.
             if (Selection.RecoverySetFiles(_draft.RecoveryFile).Count > 0)
             {
-                var draftFile = Path.GetFileName(_draft.RecoveryFile);
-                return new SetResult(SetEnd.Failed, keptNote, null)
+                if (MayBeTheOnlySet())
                 {
-                    Title = $"Já existe na pasta um conjunto \"{draftFile}\", deixado por uma criação anterior.",
-                    Hint = $"Ele pode ser o único conjunto destes arquivos: confira-o em Verificar e reparar, e então apague-o ou tire \"{DraftSuffix}\" do nome dos arquivos dele.",
-                };
+                    // Never removed here: the user checks it.
+                    var draftFile = Path.GetFileName(_draft.RecoveryFile);
+                    return new SetResult(SetEnd.Failed, keptNote, null)
+                    {
+                        Title = $"Já existe na pasta um conjunto \"{draftFile}\", deixado por uma criação anterior.",
+                        Hint = $"Ele pode ser o único conjunto destes arquivos: confira-o em Verificar e reparar, e então apague-o ou tire \"{DraftSuffix}\" do nome dos arquivos dele.",
+                    };
+                }
+
+                // Pieces of no use (WPC-409): removed, and the set is made. One still held stops the create before the
+                // engine starts, with none removed: it may be another ArkPar window's engine writing this same set.
+                if (await RemovePartialFilesAsync(onlyIfNoneHeld: true).ConfigureAwait(true) is { } held)
+                {
+                    return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(held), " "), held)
+                    {
+                        Title = "Não foi possível apagar os arquivos incompletos de uma criação anterior.",
+                        Hint = "Confira se algum arquivo .par2 da pasta está aberto em outro programa.",
+                    };
+                }
             }
 
             if (!mayStart())
@@ -165,14 +179,22 @@ internal sealed class SetCreation(
             catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
             {
                 // A partial file held by another program (an antivirus scanning it...): it stays, and the window
-                // closes with no warning, as decided in WPC-399. Not lost: the next create of this set stops on
-                // the draft left there and names it (CreateAsync).
+                // closes with no warning, as decided in WPC-399. The next create of this set removes it
+                // (CreateAsync).
             }
         }
     }
 
     internal static string? Join(string? first, string? second, string separator = "\n\n") =>
         first is null ? second : second is null ? first : first + separator + second;
+
+    /// <summary>
+    /// Whether the draft left by an earlier create may be the only set of these files: whole, the set it replaced
+    /// gone but the rename not done. Never while the set's index is there. Never without the draft's index either:
+    /// the rename moves it last and puts everything back if it fails, so a whole draft always keeps it. The engine
+    /// writes the index first, so a draft half written on a first create also passes for whole, and is kept too.
+    /// </summary>
+    private bool MayBeTheOnlySet() => File.Exists(_draft.RecoveryFile) && !File.Exists(create.RecoveryFile);
 
     private void EndRun(Action<IEngineRun?> runChanged)
     {
@@ -275,12 +297,25 @@ internal sealed class SetCreation(
     }
 
     /// <summary>Removes what a create that did not finish left behind: every file of the draft's name, and only those.</summary>
+    /// <param name="onlyIfNoneHeld">Removes none of them while one is held by another program.</param>
     /// <returns>Null when all went; otherwise why some could not, which the screen then shows.</returns>
-    private async Task<string?> RemovePartialFilesAsync()
+    private async Task<string?> RemovePartialFilesAsync(bool onlyIfNoneHeld = false)
     {
         try
         {
-            await Task.Run(DeletePartialFiles).ConfigureAwait(true);
+            await Task.Run(() =>
+            {
+                if (onlyIfNoneHeld)
+                {
+                    // Opened alone, at once: fails on a file another program has open.
+                    foreach (var file in Selection.RecoverySetFiles(_draft.RecoveryFile))
+                    {
+                        using var alone = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None);
+                    }
+                }
+
+                DeletePartialFiles();
+            }).ConfigureAwait(true);
             return null;
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)

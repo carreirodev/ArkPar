@@ -29,7 +29,6 @@
             Grid.Row="1"
             PaneDisplayMode="Auto"
             OpenPaneLength="210"
-            IsPaneToggleButtonVisible="False"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
             AlwaysShowHeader="False"

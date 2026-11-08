@@ -21,8 +21,17 @@
     <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
   </PropertyGroup>
 
+  <!-- Only the Windows App SDK parts the app uses, not the full Microsoft.WindowsAppSDK package,
+       whose AI, ML, Search and Widgets parts made the zip 25 MB bigger, and the unzipped folder
+       62 MB bigger (WPC-403). WinUI draws the screens, Foundation has the file pickers, and Runtime
+       carries the version info the bootstrapper needs in development builds. All on the same version. -->
+  <PropertyGroup>
+    <WindowsAppSdkVersion>2.6.5</WindowsAppSdkVersion>
+  </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="$(WindowsAppSdkVersion)" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="$(WindowsAppSdkVersion)" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="$(WindowsAppSdkVersion)" />
   </ItemGroup>
 
   <ItemGroup>

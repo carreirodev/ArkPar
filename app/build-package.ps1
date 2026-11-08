@@ -65,6 +65,19 @@ foreach ($file in $required) {
     }
 }
 
+# The Windows App SDK's AI and machine-learning parts, unused by the app, came
+# in with the full Microsoft.WindowsAppSDK package and made the zip 25 MB bigger
+# (WPC-403). Their two biggest files mark that they are back.
+$unwanted = @(
+    'onnxruntime.dll'
+    'DirectML.dll'
+)
+foreach ($file in $unwanted) {
+    if (Test-Path (Join-Path $packageDir $file)) {
+        throw "The package carries '$file': reference only the Windows App SDK parts the app uses (see ArkPar.App.csproj)."
+    }
+}
+
 # 3. The texts that travel with it.
 New-Item -ItemType Directory -Path $licensesDir | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'package/LEIA-ME.txt') $packageDir
@@ -91,7 +104,7 @@ function Find-PackageDir([string]$relativePath) {
 
 $runtimeNotices = [System.Collections.Generic.List[object]]::new()
 # Sorted by name, so a text shared by several packages is always named after
-# the main one (Microsoft.WindowsAppSDK).
+# the same one (Microsoft.WindowsAppSDK.Base, which every other part needs).
 $windowsAppSdk = @($assets.libraries.GetEnumerator() |
     Where-Object Key -like 'Microsoft.WindowsAppSDK*' |
     ForEach-Object { @{ Name = ($_.Key -split '/')[0]; Dir = Find-PackageDir $_.Value.path } } |

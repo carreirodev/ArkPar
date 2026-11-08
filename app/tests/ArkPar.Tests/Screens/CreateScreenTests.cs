@@ -656,6 +656,28 @@ public sealed class CreateScreenTests : IDisposable
     }
 
     [TestMethod]
+    public async Task ANewSetRemovedBeforeItIsNamedIsNotToldAsMade()
+    {
+        // Removed by another program between the engine's end and the rename, e.g. an ArkPar of another Windows
+        // user making the same set on a shared folder.
+        var (index, recoveryFile) = WriteSetOfTheSameName();
+        await ReadyAsync();
+        var creating = _screen.CreateAsync();
+        await WaitUntilAsync(() => _screen.CanControl);
+        _engine.Last.WriteSet(indexSize: 20);
+        Array.ForEach(Directory.GetFiles(_trip, "*.arkpar-novo*"), File.Delete);
+
+        _engine.Last.Finish(new EngineResult(EngineOutcome.Completed, 0, null, "Created successfully"));
+        await creating;
+
+        Assert.AreEqual(CreateStage.Failed, _screen.Stage);
+        Assert.AreEqual("Não foi possível guardar o novo conjunto.", _screen.Banner?.Title);
+        Assert.IsEmpty(_recycled);
+        Assert.HasCount(10, File.ReadAllBytes(index), "The set there is untouched.");
+        Assert.HasCount(10, File.ReadAllBytes(recoveryFile), "The set there is untouched.");
+    }
+
+    [TestMethod]
     public async Task AReadyDraftLeftNextToTheSetIsRemovedAndTheSetMade()
     {
         // The app closed hard after naming the new set ready, before the set there went: that one is whole still.

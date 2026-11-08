@@ -9,7 +9,8 @@ namespace ArkPar.Screens;
 /// Held by the ArkPar window making a set, so that another window making the same set at the same time stops
 /// instead of taking the first one's new set for a leftover (WPC-415). A file of the user's temporary folder,
 /// never of the set's, open for one window alone: Windows lets go of it and deletes it when the window is done
-/// with it, or when the app ends, even ended hard.
+/// with it, or when the app ends, even ended hard. It stops only the windows of one Windows user on one computer:
+/// two people making the same set on a shared folder are not stopped.
 /// </summary>
 internal sealed class SetLock : IDisposable
 {

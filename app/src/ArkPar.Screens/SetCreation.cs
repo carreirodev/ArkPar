@@ -55,6 +55,10 @@ internal sealed class SetCreation(
     /// </summary>
     internal const string ReadySuffix = ".arkpar-pronto";
 
+    /// <summary>Whether <paramref name="setName"/> ("Viagem.arkpar-novo", "Viagem.arkpar-pronto") is a draft's: not a set yet.</summary>
+    internal static bool IsDraftName(string setName) =>
+        setName.EndsWith(DraftSuffix, StringComparison.OrdinalIgnoreCase) || setName.EndsWith(ReadySuffix, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
@@ -82,21 +86,24 @@ internal sealed class SetCreation(
     public async Task<SetResult> CreateAsync(
         bool replaces, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
     {
+        // Said whenever the set is not made: the set there was never touched.
+        var keptNote = replaces ? "O conjunto anterior continua na pasta." : null;
         SetLock? setLock;
         try
         {
-            // Taken here, at once, like the folder listing below: without a draft, the engine starts at once.
+            // Taken before the folder is read, so another window's draft is never taken for one left by an earlier
+            // create; and at once, not on another thread: without a draft, the engine starts at once.
             setLock = SetLock.TryTake(create.RecoveryFile);
         }
         catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
         {
-            return new SetResult(SetEnd.Failed, replaces ? "O conjunto anterior continua na pasta." : null, failure.ToString())
+            return new SetResult(SetEnd.Failed, keptNote, failure.ToString())
             {
                 Title = "Não foi possível iniciar a criação.",
             };
         }
 
-        // Another window is making this set: its draft is no leftover, and nothing here is touched.
+        // Another window is making this set: its draft is its own, and nothing here is touched.
         if (setLock is null)
         {
             return new SetResult(SetEnd.Failed, null, null)
@@ -108,16 +115,15 @@ internal sealed class SetCreation(
 
         using (setLock)
         {
-            return await CreateHeldAsync(replaces, mayStart, runChanged, activityChanged, progress).ConfigureAwait(true);
+            return await CreateHeldAsync(keptNote, mayStart, runChanged, activityChanged, progress).ConfigureAwait(true);
         }
     }
 
     /// <summary><see cref="CreateAsync"/>, once this window holds the set's <see cref="SetLock"/>.</summary>
+    /// <param name="keptNote">What to say of the set there when the set is not made.</param>
     private async Task<SetResult> CreateHeldAsync(
-        bool replaces, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
+        string? keptNote, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
     {
-        // Said whenever the set is not made: the set there was never touched.
-        var keptNote = replaces ? "O conjunto anterior continua na pasta." : null;
         IEngineRun run;
         try
         {
@@ -337,8 +343,17 @@ internal sealed class SetCreation(
     /// index last, so the set is never found half renamed. A rename that fails puts back the ones already done,
     /// and the set stays whole under its own name.
     /// </summary>
+    /// <exception cref="FileNotFoundException">
+    /// The index is gone: removed by another program, or by an ArkPar of another Windows user on a shared folder,
+    /// which <see cref="SetLock"/> does not reach. Never told as a set made.
+    /// </exception>
     private static void RenameSet(string from, string to)
     {
+        if (!File.Exists(from))
+        {
+            throw new FileNotFoundException("The set to rename is gone.", from);
+        }
+
         var fromName = Path.GetFileNameWithoutExtension(from);
         var toName = Path.GetFileNameWithoutExtension(to);
         var renamed = new List<(string From, string To)>();

@@ -228,8 +228,7 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
                 var recoveryFile = Path.Combine(folder, name + Selection.RecoveryExtension);
 
                 // A set being written ("Viagem.arkpar-novo") or not yet renamed ("Viagem.arkpar-pronto") is not one yet.
-                if (!planned.Contains(recoveryFile) && !name.EndsWith(SetCreation.DraftSuffix, StringComparison.OrdinalIgnoreCase)
-                    && !name.EndsWith(SetCreation.ReadySuffix, StringComparison.OrdinalIgnoreCase))
+                if (!planned.Contains(recoveryFile) && !SetCreation.IsDraftName(name))
                 {
                     candidates.Add((new PlannedSet(recoveryFile, folder, [], 0) { Where = where }, setFiles));
                 }

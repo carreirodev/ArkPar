@@ -96,6 +96,7 @@ public sealed class CreateScreen : Observable, IDisposable
     private bool _isPaused;
     private Banner? _banner;
     private string? _details;
+    private bool _isDeletingOrphanedSets;
 
     /// <param name="startEngine">Starts an engine task (<see cref="EngineRun.Start"/> in the app).</param>
     /// <param name="runTrial">Runs the engine's trial of a create (<see cref="EngineTrial.RunAsync"/> in the app).</param>
@@ -159,6 +160,7 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(IsRunning));
                 Announce(nameof(IsReading));
                 Announce(nameof(CanChoose));
+                Announce(nameof(CanDeleteOrphanedSets));
                 Announce(nameof(CanCreate));
                 Announce(nameof(CanCancel));
             }
@@ -290,6 +292,105 @@ public sealed class CreateScreen : Observable, IDisposable
 
     /// <summary>The engine is still listing the other sets in the folders chosen, to find the orphaned ones.</summary>
     public bool IsFindingOrphanedSets => _review.IsFindingOrphanedSets;
+
+    /// <summary>Whether the orphaned sets can be deleted now: not while reading, creating or deleting.</summary>
+    public bool CanDeleteOrphanedSets => CanChoose && !_isDeletingOrphanedSets;
+
+    /// <summary>"Apagar os 200 conjuntos", when more than one orphaned set can be deleted; otherwise null.</summary>
+    public string? DeleteAllText => OrphanedSets.Count(set => set.CanDelete) is var count and > 1
+        ? $"Apagar os {count.ToString("N0", PtBrazil.Culture)} conjuntos"
+        : null;
+
+    /// <summary>
+    /// What to ask before deleting the sets of <paramref name="rows"/>, title and text: when some still protect files on the
+    /// disk, which are left without them, or when the drive has no Recycle Bin, so they go for good. Null when
+    /// they protect nothing and go to the Recycle Bin.
+    /// </summary>
+    public (string Title, string Text)? DeleteQuestion(IReadOnlyList<OrphanedSet> rows)
+    {
+        // A folder row is not deleted, so it is not counted.
+        List<OrphanedSet> sets = [.. rows.Where(set => set.CanDelete)];
+        var hasRecycleBin = HasRecycleBin;
+        var protecting = sets.Where(set => set.StillProtected > 0).ToList();
+        if (protecting.Count == 0 && hasRecycleBin)
+        {
+            return null;
+        }
+
+        var stillThere = protecting.Sum(set => set.StillProtected);
+        var (files, theyStay) = stillThere == 1
+            ? ("1 arquivo que está no disco", "ele fica")
+            : ($"{stillThere.ToString("N0", PtBrazil.Culture)} arquivos que estão no disco", "eles ficam");
+        var protects = (sets, protecting.Count) switch
+        {
+            (_, 0) => null,
+            ([var only], _) => $"{only.Name} ainda protege {files}, e {theyStay} sem esse conjunto.",
+            (_, 1) => $"Entre eles, 1 ainda protege {files}, e {theyStay} sem ele.",
+            (_, var count) => $"Entre eles, {count.ToString("N0", PtBrazil.Culture)} ainda protegem {files}, e {theyStay} sem eles.",
+        };
+        var goes = (hasRecycleBin, sets) switch
+        {
+            (true, [_]) => "Ele vai para a Lixeira.",
+            (true, _) => "Eles vão para a Lixeira.",
+            (false, [var only]) => $"Este disco não tem Lixeira: {only.Name} será apagado de vez, sem como recuperar.",
+            (false, _) => $"Este disco não tem Lixeira: os {sets.Count.ToString("N0", PtBrazil.Culture)} conjuntos serão apagados de vez, sem como recuperar.",
+        };
+        var title = (hasRecycleBin, sets) switch
+        {
+            (false, _) => "Apagar de vez?",
+            (true, [_]) => "Apagar o conjunto?",
+            _ => "Apagar os conjuntos?",
+        };
+        return (title, SetCreation.Join(protects, goes, " ") ?? goes);
+    }
+
+    /// <summary>
+    /// Deletes the files of <paramref name="sets"/> (index and recovery files), to the Recycle Bin when the drive
+    /// has one, and takes them off <see cref="OrphanedSets"/>. A set that cannot be deleted stays, and the
+    /// <see cref="Banner"/> says so, with the reason in <see cref="Details"/>. Only when <see cref="CanDeleteOrphanedSets"/>.
+    /// </summary>
+    public async Task DeleteOrphanedSetsAsync(IReadOnlyList<OrphanedSet> sets)
+    {
+        if (!CanDeleteOrphanedSets)
+        {
+            throw new InvalidOperationException("The orphaned sets cannot be deleted now.");
+        }
+
+        var hasRecycleBin = HasRecycleBin;
+        IsDeletingOrphanedSets = true;
+        try
+        {
+            var deleted = new List<OrphanedSet>();
+            var failures = new List<string>();
+            foreach (var set in sets.Where(set => set.CanDelete))
+            {
+                try
+                {
+                    await Task.Run(() => DeleteSet(set.Path, hasRecycleBin)).ConfigureAwait(true);
+                    deleted.Add(set);
+                }
+                catch (Exception failure)
+                {
+                    // Shown with its details: a file held by another program, or its removal refused in Windows' dialog.
+                    failures.Add($"{set.Path}:\n{failure}");
+                }
+            }
+
+            _review.Remove(deleted);
+            if (failures.Count > 0)
+            {
+                Banner = new Banner(
+                    BannerKind.Warning,
+                    failures.Count == 1 ? "1 conjunto não pôde ser apagado." : $"{failures.Count.ToString("N0", PtBrazil.Culture)} conjuntos não puderam ser apagados.",
+                    (failures.Count == 1 ? "Algum arquivo dele" : "Algum arquivo deles") + " pode estar aberto em outro programa. O motivo está em Detalhes técnicos.");
+                Details = failures.Aggregate((string?)null, (all, failure) => SetCreation.Join(all, failure));
+            }
+        }
+        finally
+        {
+            IsDeletingOrphanedSets = false;
+        }
+    }
 
     /// <summary>The sets the create will make: the ones included.</summary>
     public IReadOnlyList<PlannedSet> Included => _review.Included;
@@ -588,6 +689,38 @@ public sealed class CreateScreen : Observable, IDisposable
     /// </summary>
     private bool HasRecycleBin => Selection.BaseDirectory is { } folder && _hasRecycleBin(folder);
 
+    private bool IsDeletingOrphanedSets
+    {
+        get => _isDeletingOrphanedSets;
+        set
+        {
+            if (Set(ref _isDeletingOrphanedSets, value))
+            {
+                Announce(nameof(CanDeleteOrphanedSets));
+            }
+        }
+    }
+
+    /// <summary>Deletes the files of the set whose index is <paramref name="recoveryFile"/>, as a set replaced is.</summary>
+    private void DeleteSet(string recoveryFile, bool hasRecycleBin)
+    {
+        var files = Selection.RecoverySetFiles(recoveryFile);
+        if (hasRecycleBin)
+        {
+            if (files.Count > 0)
+            {
+                _recycle(files);
+            }
+
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            File.Delete(file);
+        }
+    }
+
     private static bool DriveHasRecycleBin(string folder) =>
         !folder.StartsWith(@"\\", StringComparison.Ordinal) && new DriveInfo(folder).DriveType == DriveType.Fixed;
 
@@ -874,6 +1007,7 @@ public sealed class CreateScreen : Observable, IDisposable
                 Announce(nameof(OrphanedSets));
                 Announce(nameof(HasOrphanedSets));
                 Announce(nameof(HasSetList));
+                Announce(nameof(DeleteAllText));
                 break;
             case nameof(SetReview.IsFindingOrphanedSets):
                 Announce(nameof(IsFindingOrphanedSets));

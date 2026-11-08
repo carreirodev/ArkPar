@@ -151,6 +151,45 @@ public sealed partial class CreatePage : UserControl
     private void OnChoiceRowSizeChanged(object sender, SizeChangedEventArgs e) =>
         VisualStateManager.GoToState(this, e.NewSize.Width < SideBySideMinWidth ? "Stacked" : "SideBySide", useTransitions: false);
 
+    private async void OnDeleteOrphanedSet(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: OrphanedSet set })
+        {
+            await DeleteOrphanedSetsAsync([set]);
+        }
+    }
+
+    private async void OnDeleteAllOrphanedSets(object sender, RoutedEventArgs e) => await DeleteOrphanedSetsAsync(Screen.OrphanedSets);
+
+    // DeleteOrphanedSetsAsync shows every failure on the screen itself. Asks first when the screen has a question:
+    // a set that still protects files on the disk, or a drive without a Recycle Bin.
+    private async Task DeleteOrphanedSetsAsync(IReadOnlyList<OrphanedSet> sets)
+    {
+        if (!Screen.CanDeleteOrphanedSets)
+        {
+            return;
+        }
+
+        if (Screen.DeleteQuestion(sets) is var (title, question))
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = title,
+                Content = question,
+                PrimaryButtonText = "Apagar",
+                CloseButtonText = "Cancelar",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary || !Screen.CanDeleteOrphanedSets)
+            {
+                return;
+            }
+        }
+
+        await Screen.DeleteOrphanedSetsAsync(sets);
+    }
+
     private void OnClear(object sender, RoutedEventArgs e)
     {
         if (Screen.CanChoose)

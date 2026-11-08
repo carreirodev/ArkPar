@@ -49,7 +49,7 @@ A recovery set that no longer matches the files it should protect: files were ad
 _Avoid_: outdated, old set
 
 **Orphaned set**:
-A recovery set inside the folders chosen to create again that no set the create will make has the name of, and whose files are partly or all gone from the disk (a photo deleted in per file, a folder left empty in per folder). Creating never makes nor remakes it; the list before creating shows it as a warning to use verify and repair, since it may be the only way back to what was lost. A set of another mode whose files are all still there is not one. One that cannot be read, or whose folder cannot be read, is shown among them too, with the reason, since it may be one.
+A recovery set inside the folders chosen to create again that no set the create will make has the name of, and whose files are partly or all gone from the disk (a photo deleted in per file, a folder left empty in per folder). Creating never makes nor remakes it; the list before creating shows it as a warning to use verify and repair, since it may be the only way back to what was lost, and lets the user delete it, asking first when it still protects files on the disk or the drive has no Recycle Bin. A set of another mode whose files are all still there is not one. One that cannot be read, or whose folder cannot be read, is shown among them too, with the reason, since it may be one.
 _Avoid_: leftover set, lost set
 
 **Redundancy**:

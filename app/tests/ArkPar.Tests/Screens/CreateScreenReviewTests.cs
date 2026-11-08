@@ -17,7 +17,9 @@ public sealed class CreateScreenReviewTests : IDisposable
     private readonly FakeEngine _engine = new();
     private readonly FakeTrial _trial = new();
     private readonly FakeListing _listing = new();
+    private readonly List<string> _recycled = [];
     private readonly string _root;
+    private bool _hasRecycleBin = true;
     private readonly CreateScreen _screen;
 
     public CreateScreenReviewTests()
@@ -31,7 +33,16 @@ public sealed class CreateScreenReviewTests : IDisposable
         WritePhoto(@"Novembro\IMG_1101.JPG");
         WritePhoto(@"Novembro\Feriado\IMG_1115.JPG");
         WritePhoto(@"Dezembro\IMG_1201.JPG");
-        _screen = new CreateScreen(_engine.Start, _trial.RunAsync, _listing.ListAsync, files => Array.ForEach([.. files], File.Delete));
+        _screen = new CreateScreen(
+            _engine.Start,
+            _trial.RunAsync,
+            _listing.ListAsync,
+            files =>
+            {
+                _recycled.AddRange(files);
+                Array.ForEach([.. files], File.Delete);
+            },
+            _ => _hasRecycleBin);
     }
 
     public void Dispose()
@@ -245,7 +256,7 @@ public sealed class CreateScreenReviewTests : IDisposable
         await ReadyAsync(CreationMode.PerFile);
         await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
 
-        Assert.AreEqual("Janeiro.par2 (2026): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets), "Novembro's set covers files still there.");
+        Assert.AreEqual("Janeiro.par2 (2026): 1 arquivo removido; ainda protege 1 que está no disco, use Verificar e reparar", Describe(_screen.OrphanedSets), "Novembro's set covers files still there.");
         Assert.AreEqual(january, _screen.OrphanedSets.Single().Path);
         Assert.Contains(Path.Combine(_root, @"Novembro\Novembro.par2"), _listing.Asked, "Listed to know.");
         Assert.IsFalse(_listing.Asked.Any(file => file.Contains(".arkpar-novo", StringComparison.Ordinal)), "A set being written is not one.");
@@ -323,6 +334,123 @@ public sealed class CreateScreenReviewTests : IDisposable
 
         Assert.IsNotNull(_screen.SelectionProblem);
         Assert.AreEqual("Dezembro.par2 (Dezembro): 1 arquivo removido, use Verificar e reparar", Describe(_screen.OrphanedSets));
+    }
+
+    [TestMethod]
+    public async Task DeletingAnOrphanedSetSendsItsFilesToTheRecycleBinForGood()
+    {
+        var (index, volume) = WriteOrphanedSet("Janeiro");
+        await ReadyAsync(CreationMode.PerFolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+        var january = _screen.OrphanedSets.Single();
+
+        Assert.IsTrue(january.CanDelete);
+        Assert.IsNull(_screen.DeleteQuestion([january]), "The Recycle Bin gives it back: nothing to ask.");
+        Assert.IsNull(_screen.DeleteAllText, "One set: its own button is enough.");
+        await _screen.DeleteOrphanedSetsAsync([january]);
+
+        CollectionAssert.AreEquivalent(new[] { index, volume }, _recycled);
+        Assert.IsFalse(_screen.HasOrphanedSets);
+        Assert.IsFalse(_screen.HasBanner);
+
+        await _screen.AddAsync([_root]);
+        await WaitUntilAsync(() => !_screen.IsReviewing && !_screen.IsFindingOrphanedSets);
+        Assert.IsFalse(_screen.HasOrphanedSets, "Gone: running again does not bring it back.");
+    }
+
+    [TestMethod]
+    public async Task DeletingAllTheOrphanedSetsAtOnce()
+    {
+        WriteOrphanedSet("Janeiro");
+        WriteOrphanedSet("Fevereiro");
+        await ReadyAsync(CreationMode.PerFolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual("Apagar os 2 conjuntos", _screen.DeleteAllText);
+        await _screen.DeleteOrphanedSetsAsync(_screen.OrphanedSets);
+
+        Assert.HasCount(4, _recycled);
+        Assert.IsFalse(_screen.HasOrphanedSets);
+        Assert.IsNull(_screen.DeleteAllText);
+    }
+
+    [TestMethod]
+    public async Task WithoutARecycleBinDeletingIsAskedFirstAndIsForGood()
+    {
+        _hasRecycleBin = false;
+        var (index, volume) = WriteOrphanedSet("Janeiro");
+        WriteOrphanedSet("Fevereiro");
+        await ReadyAsync(CreationMode.PerFolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+        var january = _screen.OrphanedSets.Single(set => set.Name == "Janeiro.par2");
+
+        Assert.AreEqual(("Apagar de vez?", "Este disco não tem Lixeira: Janeiro.par2 será apagado de vez, sem como recuperar."), _screen.DeleteQuestion([january]));
+        Assert.AreEqual(("Apagar de vez?", "Este disco não tem Lixeira: os 2 conjuntos serão apagados de vez, sem como recuperar."), _screen.DeleteQuestion(_screen.OrphanedSets));
+        await _screen.DeleteOrphanedSetsAsync([january]);
+
+        Assert.IsEmpty(_recycled);
+        Assert.IsFalse(File.Exists(index) || File.Exists(volume));
+        Assert.AreEqual("Fevereiro.par2", _screen.OrphanedSets.Single().Name);
+    }
+
+    [TestMethod]
+    public async Task ASetThatCannotBeDeletedStaysWithTheReason()
+    {
+        var (index, _) = WriteOrphanedSet("Janeiro");
+        WriteOrphanedSet("Fevereiro");
+        await ReadyAsync(CreationMode.PerFolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+
+        using (new FileStream(index, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            await _screen.DeleteOrphanedSetsAsync(_screen.OrphanedSets);
+        }
+
+        Assert.AreEqual("Janeiro.par2", _screen.OrphanedSets.Single().Name, "Fevereiro's went.");
+        Assert.AreEqual(new Banner(BannerKind.Warning, "1 conjunto não pôde ser apagado.", "Algum arquivo dele pode estar aberto em outro programa. O motivo está em Detalhes técnicos."), _screen.Banner);
+        StringAssert.Contains(_screen.Details, index);
+        Assert.IsTrue(_screen.CanDeleteOrphanedSets, "It can be tried again.");
+    }
+
+    [TestMethod]
+    public async Task DeletingASetThatStillProtectsFilesIsAskedFirst()
+    {
+        // In January one set for the cover and two photos; one photo is gone, the cover and IMG_0102 are still there.
+        WritePhoto("IMG_0101.JPG");
+        WritePhoto("IMG_0102.JPG");
+        WriteSet("Janeiro.par2", "capa.jpg", "IMG_0101.JPG", "IMG_0102.JPG");
+        File.Delete(Path.Combine(_root, "IMG_0101.JPG"));
+        WriteOrphanedSet("Fevereiro");
+        await ReadyAsync(CreationMode.PerFolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+        var january = _screen.OrphanedSets.Single(set => set.Name == "Janeiro.par2");
+        var february = _screen.OrphanedSets.Single(set => set.Name == "Fevereiro.par2");
+
+        Assert.AreEqual("1 arquivo removido; ainda protege 2 que estão no disco, use Verificar e reparar", january.StatusText);
+        Assert.AreEqual(
+            ("Apagar o conjunto?", "Janeiro.par2 ainda protege 2 arquivos que estão no disco, e eles ficam sem esse conjunto. Ele vai para a Lixeira."),
+            _screen.DeleteQuestion([january]));
+        Assert.AreEqual(
+            ("Apagar os conjuntos?", "Entre eles, 1 ainda protege 2 arquivos que estão no disco, e eles ficam sem ele. Eles vão para a Lixeira."),
+            _screen.DeleteQuestion(_screen.OrphanedSets));
+        Assert.IsNull(_screen.DeleteQuestion([february]), "It protects nothing left, and the Recycle Bin gives it back.");
+
+        _hasRecycleBin = false;
+        Assert.AreEqual(
+            ("Apagar de vez?", "Janeiro.par2 ainda protege 2 arquivos que estão no disco, e eles ficam sem esse conjunto. Este disco não tem Lixeira: Janeiro.par2 será apagado de vez, sem como recuperar."),
+            _screen.DeleteQuestion([january]));
+    }
+
+    /// <summary>Writes a set of "2026" (index and one recovery file) covering a photo deleted since, so it is orphaned in any mode but single set.</summary>
+    private (string Index, string Volume) WriteOrphanedSet(string name)
+    {
+        var photo = $"{name}.JPG";
+        WritePhoto(photo);
+        var index = WriteSet($"{name}.par2", photo);
+        var volume = Path.Combine(_root, $"{name}.vol0+1.par2");
+        File.WriteAllBytes(volume, new byte[10]);
+        File.Delete(Path.Combine(_root, photo));
+        return (index, volume);
     }
 
     private static string Describe(IEnumerable<OrphanedSet> sets) => string.Join("; ", sets.Select(set => $"{set.Name} ({set.Where}): {set.StatusText}"));

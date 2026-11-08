@@ -29,6 +29,9 @@ internal static class Ui
     // Segoe Fluent Icons: Folder and Page.
     public static string IconOf(bool isFolder) => isFolder ? "" : "";
 
+    /// <summary>What a screen reader says for the button deleting a set: "Apagar Janeiro.par2".</summary>
+    public static string DeleteName(string name) => "Apagar " + name;
+
     public static string NumberOf(int count) => count.ToString("N0", PtBrazil.Culture);
 
     // While Percent is null the bar is indeterminate (IsPercentUnknown), so the stale value never shows.

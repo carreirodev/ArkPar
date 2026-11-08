@@ -17,6 +17,7 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
     private bool _isComparing;
     private bool _isFindingOrphanedSets;
     private int _comparedCount;
+    private readonly Lock _orphanedSetsLock = new();
     private CancellationTokenSource? _stop;
 
     /// <summary>One line for each planned set, in the plan's order.</summary>
@@ -161,6 +162,15 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
         _ = ReviewAsync(pending, candidates, stop);
     }
 
+    /// <summary>Takes <paramref name="sets"/> off <see cref="OrphanedSets"/>, once deleted.</summary>
+    public void Remove(IReadOnlyCollection<OrphanedSet> sets)
+    {
+        lock (_orphanedSetsLock)
+        {
+            OrphanedSets = [.. OrphanedSets.Where(set => !sets.Contains(set))];
+        }
+    }
+
     /// <summary>Stops the comparing under way: its answers are no longer wanted.</summary>
     public void Stop()
     {
@@ -199,7 +209,10 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
                 }
                 catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
                 {
-                    unreadable.Add(new OrphanedSet(Selection.FolderName(folder), folder, where, "Não foi possível ler a pasta; o motivo está em Detalhes técnicos", failure.ToString()));
+                    unreadable.Add(new OrphanedSet(Selection.FolderName(folder), folder, where, "Não foi possível ler a pasta; o motivo está em Detalhes técnicos", failure.ToString())
+                    {
+                        IsFolder = true,
+                    });
                     continue;
                 }
             }
@@ -254,12 +267,16 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
                 if (await CompareAsync(candidate.Set, candidate.SetFiles, stop).ConfigureAwait(true) is { } comparison
                     && OrphanedSetOf(candidate.Set, comparison) is { } orphaned)
                 {
-                    OrphanedSets =
-                    [
-                        .. OrphanedSets.Append(orphaned)
-                            .OrderBy(set => Path.GetDirectoryName(set.Path), StringComparer.CurrentCultureIgnoreCase)
-                            .ThenBy(set => set.Name, StringComparer.CurrentCultureIgnoreCase),
-                    ];
+                    // Without a screen's thread (tests, a caller off it), two answers may land at once: neither row is lost.
+                    lock (_orphanedSetsLock)
+                    {
+                        OrphanedSets =
+                        [
+                            .. OrphanedSets.Append(orphaned)
+                                .OrderBy(set => Path.GetDirectoryName(set.Path), StringComparer.CurrentCultureIgnoreCase)
+                                .ThenBy(set => set.Name, StringComparer.CurrentCultureIgnoreCase),
+                        ];
+                    }
                 }
             }).ConfigureAwait(true);
             if (!stop.IsCancellationRequested)
@@ -318,7 +335,18 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
             Path.GetFileName(set.RecoveryFile),
             set.RecoveryFile,
             set.Where,
-            PtBrazil.Count(comparison.RemovedFiles, "arquivo removido", "arquivos removidos") + ", use Verificar e reparar"),
+            PtBrazil.Count(comparison.RemovedFiles, "arquivo removido", "arquivos removidos")
+                + comparison.MovedOutFiles switch
+                {
+                    0 => "",
+                    1 => "; ainda protege 1 que está no disco",
+                    var stillThere => $"; ainda protege {stillThere.ToString("N0", PtBrazil.Culture)} que estão no disco",
+                }
+                + ", use Verificar e reparar")
+        {
+            // Covering nothing planned, every file it lists that is still on the disk counts as moved out.
+            StillProtected = comparison.MovedOutFiles,
+        },
         _ => null,
     };
 

@@ -315,6 +315,7 @@
                             SelectionMode="None"
                             MaxHeight="200"
                             Visibility="{x:Bind Screen.HasOrphanedSets, Mode=OneWay}"
+                            IsEnabled="{x:Bind Screen.CanDeleteOrphanedSets, Mode=OneWay}"
                             AutomationProperties.Name="Conjuntos que perderam arquivos">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="screens:OrphanedSet">
@@ -322,6 +323,7 @@
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <FontIcon
                                             Glyph="&#xE7BA;"
@@ -339,10 +341,22 @@
                                                 Foreground="{ThemeResource SystemFillColorCautionBrush}"
                                                 TextWrapping="Wrap" />
                                         </StackPanel>
+                                        <Button
+                                            Grid.Column="2"
+                                            Content="Apagar"
+                                            VerticalAlignment="Center"
+                                            Visibility="{x:Bind CanDelete}"
+                                            Click="OnDeleteOrphanedSet"
+                                            AutomationProperties.Name="{x:Bind local:Ui.DeleteName(Name)}" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
+                        <Button
+                            Content="{x:Bind Screen.DeleteAllText, Mode=OneWay}"
+                            Visibility="{x:Bind local:Ui.VisibleIfText(Screen.DeleteAllText), Mode=OneWay, FallbackValue=Collapsed}"
+                            IsEnabled="{x:Bind Screen.CanDeleteOrphanedSets, Mode=OneWay}"
+                            Click="OnDeleteAllOrphanedSets" />
                     </StackPanel>
                 </Border>
 

@@ -19,6 +19,21 @@
         AllowDrop="True"
         DragOver="OnDragOver"
         Drop="OnDrop">
+        <VisualStateManager.VisualStateGroups>
+            <!-- Set in code (OnChoiceRowSizeChanged) from the row's own width, which the navigation pane narrows. -->
+            <VisualStateGroup x:Name="ChoiceRowWidths">
+                <VisualState x:Name="SideBySide" />
+                <VisualState x:Name="Stacked">
+                    <VisualState.Setters>
+                        <Setter Target="RedundancyColumn.Width" Value="0" />
+                        <Setter Target="ChoiceRow.ColumnSpacing" Value="0" />
+                        <Setter Target="ChoiceRow.RowSpacing" Value="16" />
+                        <Setter Target="RedundancyCard.(Grid.Column)" Value="0" />
+                        <Setter Target="RedundancyCard.(Grid.Row)" Value="1" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
         <ScrollViewer x:Name="Scroller">
             <StackPanel Spacing="18" Padding="28,24" MaxWidth="1100">
 
@@ -124,18 +139,31 @@
                     </StackPanel>
                 </Border>
 
-                <!-- What was chosen, beside how much redundancy every set gets. -->
-                <Grid ColumnSpacing="16" Visibility="{x:Bind Screen.HasSelection, Mode=OneWay}">
+                <!-- What was chosen, beside how much redundancy every set gets; one above the other when narrow. -->
+                <Grid
+                    x:Name="ChoiceRow"
+                    ColumnSpacing="16"
+                    Visibility="{x:Bind Screen.HasSelection, Mode=OneWay}"
+                    SizeChanged="OnChoiceRowSizeChanged">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1.1*" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition x:Name="RedundancyColumn" Width="*" />
                     </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
                     <Border Style="{StaticResource Card}" VerticalAlignment="Top">
                         <StackPanel Spacing="10">
-                            <Grid>
-                                <TextBlock Text="Arquivos incluídos" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <TextBlock Text="{x:Bind Screen.Summary, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" HorizontalAlignment="Right" VerticalAlignment="Bottom" />
+                            <!-- The summary in a column of its own, so a narrow card wraps the title instead of writing over it. -->
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Arquivos incluídos" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                                <TextBlock Grid.Column="1" Text="{x:Bind Screen.Summary, Mode=OneWay}" Style="{StaticResource SecondaryCaption}" VerticalAlignment="Bottom" />
                             </Grid>
                             <!-- Filled in code (CreatePage.ShowTree): each folder's contents are added when it opens. -->
                             <TreeView
@@ -172,7 +200,7 @@
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="1" Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <Border x:Name="RedundancyCard" Grid.Column="1" Style="{StaticResource Card}" VerticalAlignment="Top">
                         <StackPanel Spacing="12">
                             <Grid>
                                 <TextBlock Text="Redundância" />
@@ -192,11 +220,11 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="Ocupa" Style="{StaticResource SecondaryCaption}" />
-                                    <TextBlock Text="{x:Bind Screen.SpaceText, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="{x:Bind Screen.SpaceText, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Repara até" Style="{StaticResource SecondaryCaption}" />
-                                    <TextBlock Text="{x:Bind Screen.RepairableText, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="{x:Bind Screen.RepairableText, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="WrapWholeWords" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
                                     <TextBlock Text="Salvar em" Style="{StaticResource SecondaryCaption}" />

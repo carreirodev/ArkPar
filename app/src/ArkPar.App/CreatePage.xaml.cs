@@ -13,6 +13,12 @@ namespace ArkPar.App;
 
 public sealed partial class CreatePage : UserControl
 {
+    /// <summary>
+    /// The narrowest the files and Redundância cards share a row. Below it, each of Ocupa, Repara até and Salvar em
+    /// gets under 100 px: "≈ 9,3% de cada conjunto" takes three lines and a folder name shows a few letters.
+    /// </summary>
+    private const double SideBySideMinWidth = 760;
+
     private WindowId _window;
 
     public CreatePage()
@@ -139,6 +145,11 @@ public sealed partial class CreatePage : UserControl
         string[] chosen = [.. paths];
         return chosen.Length > 0 && Screen.CanChoose ? Screen.AddAsync(chosen) : Task.CompletedTask;
     }
+
+    // From the row's width, not the window's: the navigation pane takes 210 px of it. Stacking changes only the
+    // row's height, so the state never flips back and forth.
+    private void OnChoiceRowSizeChanged(object sender, SizeChangedEventArgs e) =>
+        VisualStateManager.GoToState(this, e.NewSize.Width < SideBySideMinWidth ? "Stacked" : "SideBySide", useTransitions: false);
 
     private void OnClear(object sender, RoutedEventArgs e)
     {

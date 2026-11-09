@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 # Builds the app's icon, app/src/ArkPar.App/Assets/ArkPar.ico, from its two
-# drawings in the same folder: ArkPar-large.svg, the WPC lamp, only at 256 px
-# (Explorer's large views, Start), and ArkPar-small.svg at every other size. The
-# lamp fades out below that: the taskbar shrinks the window's 56 px icon to 42 px
-# at 175% display scale. Run it after changing either drawing, and commit the
-# .ico: the build only embeds it, it does not draw it.
+# drawings in the same folder: ArkPar-large.svg, the ring of blocks around a tick,
+# only at 256 px (Explorer's large views, Start), and ArkPar-small.svg, a thicker
+# ring alone, at every other size. The tick and the thin blocks blur below that: the
+# taskbar shrinks the window's 56 px icon to 42 px at 175% display scale. Run it
+# after changing either drawing, and commit the .ico: the build only embeds it, it
+# does not draw it.
 #
 # Each size is drawn by Chrome (headless) straight at that size, then stored as
 # a PNG entry of the .ico, as Windows has read them since Vista.

@@ -8,6 +8,9 @@
 /docs/** text=auto eol=lf
 /CLAUDE.md text eol=lf
 /GLOSSARY.md text eol=lf
+# Ours since WPC-418; upstream still changes its own README.md, so an upstream merge conflicts here: keep ours.
+/README.md text eol=lf
+/README.pt-BR.md text eol=lf
 /.gitattributes text eol=lf
 /.gitignore text eol=lf
 

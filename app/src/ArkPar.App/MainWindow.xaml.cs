@@ -6,6 +6,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.UI;
 
 namespace ArkPar.App;
 
@@ -25,6 +26,11 @@ public sealed partial class MainWindow : Window
 
         // The minimize, maximize and close buttons follow Windows' light or dark mode as it changes, like the rest.
         AppWindow.TitleBar.PreferredTheme = TitleBarTheme.UseDefaultAppMode;
+
+        // Their symbols get the colour here: Windows draws them white, for its own coloured title bar, when the user
+        // turned on "Mostrar cor de destaque nas barras de título", and ArkPar's title bar is never coloured (WPC-419).
+        ColorCaptionButtonsFor(Root.ActualTheme);
+        Root.ActualThemeChanged += (root, _) => ColorCaptionButtonsFor(root.ActualTheme);
 
         // The taskbar and Alt+Tab take the window's icon, not the one inside ArkPar.exe.
         AppWindow.SetIcon(App.IconPath);
@@ -63,6 +69,23 @@ public sealed partial class MainWindow : Window
     {
         Navigation.SelectedItem = VerifyItem;
         Verify.Open(recoveryFile);
+    }
+
+    // Black on the light title bar, white on the dark one, greyed while another window is in front; under the mouse
+    // a button darkens (light) or lightens (dark) a little, as in Windows' own apps, instead of taking the accent
+    // colour (the greys and the two faint fills are the ones WinUI uses for disabled text and for a subtle fill).
+    // Windows keeps the close button's red.
+    private void ColorCaptionButtonsFor(ElementTheme theme)
+    {
+        var dark = theme == ElementTheme.Dark;
+        var symbol = dark ? Colors.White : Colors.Black;
+        var titleBar = AppWindow.TitleBar;
+        titleBar.ButtonForegroundColor = symbol;
+        titleBar.ButtonHoverForegroundColor = symbol;
+        titleBar.ButtonPressedForegroundColor = symbol;
+        titleBar.ButtonInactiveForegroundColor = dark ? Color.FromArgb(0xFF, 0x71, 0x71, 0x71) : Color.FromArgb(0xFF, 0x9B, 0x9B, 0x9B);
+        titleBar.ButtonHoverBackgroundColor = Color.FromArgb(0x18, symbol.R, symbol.G, symbol.B);
+        titleBar.ButtonPressedBackgroundColor = Color.FromArgb(0x10, symbol.R, symbol.G, symbol.B);
     }
 
     private void OnTaskFinished(object? sender, Banner banner)

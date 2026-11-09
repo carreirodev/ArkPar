@@ -498,7 +498,7 @@ public sealed class FolderVerifyScreen : EngineTaskScreen, IDisposable
         Folders =
         [
             .. _sets
-                .GroupBy(set => set.Found.Folder, StringComparer.OrdinalIgnoreCase)
+                .GroupBy(set => set.Found.ProtectedFolder, StringComparer.OrdinalIgnoreCase)
                 .Select(folder => new CheckedFolder(NameIn(root, folder.Key), folder.Key, [.. folder]))
                 .Concat(leftOut.Select(folder => new CheckedFolder(NameIn(root, folder.Path), folder.Path, [], folder.Reason)))
                 .OrderBy(folder => folder.Path, TreeOrder.Instance),

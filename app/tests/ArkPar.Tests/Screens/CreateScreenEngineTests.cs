@@ -56,6 +56,43 @@ public sealed class CreateScreenEngineTests(TestContext testContext)
     }
 
     [TestMethod]
+    public async Task PerSubfolderMakesASetBesideEachSubfolderThatVerifiesThePhotosInsideIt()
+    {
+        WritePhoto(@"viagem\ônibus.jpg", 2);
+        WritePhoto(@"viagem\2019\aniversário.jpg", 3);
+        Directory.CreateDirectory(Path.Combine(_folder, "natal"));
+        WritePhoto(@"natal\ceia.jpg", 4);
+        using var screen = NewScreen(StartEngine);
+
+        await screen.AddAsync([_folder]);
+        screen.Mode = CreationMode.PerSubfolder;
+        await WaitUntilAsync(() => screen.Estimate is not null, "the estimate");
+        Assert.IsTrue(screen.CanCreate, screen.EstimateProblem);
+
+        await screen.CreateAsync().WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+
+        Assert.AreEqual(CreateStage.Created, screen.Stage, screen.Details);
+        Assert.IsEmpty(Directory.EnumerateFiles(_folder, "*.par2", SearchOption.AllDirectories).Where(file => Path.GetDirectoryName(file) != _folder), "No set inside a subfolder.");
+        var sets = new (string RecoveryFile, string Photos)[]
+        {
+            (Path.Combine(_folder, "natal.par2"), @"natal\ceia.jpg"),
+            (Path.Combine(_folder, "viagem.par2"), @"viagem\2019\aniversário.jpg, viagem\ônibus.jpg"),
+        };
+        foreach (var (recoveryFile, photos) in sets)
+        {
+            using var verify = new VerifyScreen((command, progress) => EngineRun.Start(command, progress, EngineProcess.ExePath));
+            await verify.VerifyAsync(recoveryFile).WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);
+
+            Assert.AreEqual(VerifyStage.Verified, verify.Stage, verify.Details);
+            Assert.AreEqual(photos, string.Join(", ", verify.CompleteFiles.Select(file => file.Name).Order(StringComparer.Ordinal)), recoveryFile);
+        }
+
+        await screen.AddAsync([_folder]);
+        await WaitUntilAsync(() => !screen.IsReviewing, "the comparing");
+        Assert.AreEqual("Pular · em dia; Pular · em dia", string.Join("; ", screen.Items.Select(item => item.StatusText)), "Each compared with the set beside its subfolder.");
+    }
+
+    [TestMethod]
     public async Task PerFolderMakesASetInEachFolderThatVerifiesItsOwnPhotos()
     {
         WritePhoto("praia 01.jpg", 1);

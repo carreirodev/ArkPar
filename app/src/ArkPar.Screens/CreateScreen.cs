@@ -115,7 +115,7 @@ public sealed class CreateScreen : EngineTaskScreen, IDisposable
         new(CreationMode.SingleSet, "Um conjunto para tudo",
             "Um só conjunto protege tudo o que foi escolhido, com as subpastas. Ex.: escolhendo D:\\Fotos\\2019, sai 1 conjunto em 2019."),
         new(CreationMode.PerSubfolder, "Um por subpasta",
-            "Cada subpasta ganha o seu conjunto, cobrindo tudo dentro dela. Ex.: 1 conjunto em 01 - Réveillon e 1 em 07 - Viagem Bahia, este cobrindo também Praia do Forte. Arquivos soltos em 2019 ganham um conjunto só deles."),
+            "Cada subpasta ganha o seu conjunto, cobrindo tudo dentro dela e gravado ao lado dela. Ex.: em 2019 saem 01 - Réveillon.par2 e 07 - Viagem Bahia.par2, este cobrindo também Praia do Forte. Arquivos soltos em 2019 ganham um conjunto só deles."),
         new(CreationMode.PerFolder, "Um por pasta",
             "Cada pasta que tem arquivos ganha o seu conjunto, cobrindo só os arquivos dela. Ex.: 1 conjunto em 01 - Réveillon, 1 em 07 - Viagem Bahia e 1 em Praia do Forte."),
         new(CreationMode.PerFile, "Um por arquivo",

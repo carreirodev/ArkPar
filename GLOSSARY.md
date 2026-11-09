@@ -29,7 +29,7 @@ The creation mode that makes one recovery set covering everything selected, incl
 _Avoid_: normal mode
 
 **Per subfolder**:
-The creation mode that makes one recovery set for each direct subfolder of the selected folder, each covering everything inside it. Files loose in the selected folder itself get one more set there, covering only them.
+The creation mode that makes one recovery set for each direct subfolder of the selected folder, each covering everything inside it and saved beside it, in the selected folder, under the subfolder's name (`2019\07 - Viagem Bahia.par2` for `2019\07 - Viagem Bahia`). Files loose in the selected folder itself get one more set there, covering only them.
 _Avoid_: per-folder (ambiguous)
 
 **Per folder**:
@@ -41,7 +41,7 @@ The creation mode that makes one recovery set for each selected file.
 _Avoid_: individual mode
 
 **Folder verification**:
-Verifying every recovery set found inside a chosen folder, at any depth, one after another, then summing them up by folder: intact, with a problem the sets can repair, with a problem they cannot, or not verified (unreadable, or canceled first). A folder is as bad as its worst set.
+Verifying every recovery set found inside a chosen folder, at any depth, one after another, then summing them up by folder: intact, with a problem the sets can repair, with a problem they cannot, or not verified (unreadable, or canceled first). A folder is as bad as its worst set. A set saved beside the subfolder of its name, as per subfolder makes them, counts for that subfolder.
 _Avoid_: batch mode, recursive verify
 
 **Stale set**:

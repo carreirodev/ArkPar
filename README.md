@@ -73,7 +73,7 @@ Open **Criar** (Create), then drag files or folders into the window, or pick the
 | On screen | Meaning | Example: choosing `D:\Fotos\2019` |
 | --- | --- | --- |
 | **Um conjunto para tudo** | One set for everything, subfolders included | 1 set in `2019` |
-| **Um por subpasta** | One set for each direct subfolder | 1 set in `2019\Praia`, 1 in `2019\Natal` |
+| **Um por subpasta** | One set for each direct subfolder, saved beside it | `Praia.par2` and `Natal.par2` in `2019`, beside the folders `Praia` and `Natal` |
 | **Um por pasta** | One set in every folder that holds files, at any depth | 1 set in each folder, covering only its own files |
 | **Um por arquivo** | One set for each file | 1 set per photo |
 

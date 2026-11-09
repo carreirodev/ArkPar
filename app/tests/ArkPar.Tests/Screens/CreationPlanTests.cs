@@ -41,16 +41,17 @@ public sealed class CreationPlanTests
     }
 
     [TestMethod]
-    public void PerSubfolderMakesOneSetInEachSubfolderCoveringEverythingInIt()
+    public void PerSubfolderMakesOneSetBesideEachSubfolderCoveringEverythingInIt()
     {
         var plan = PlanFor(CreationMode.PerSubfolder);
 
         Assert.AreEqual(
             """
-            2019\01 - Réveillon\01 - Réveillon.par2: IMG_0001.JPG, IMG_0002.JPG
-            2019\07 - Viagem Bahia\07 - Viagem Bahia.par2: IMG_4469.JPG, Praia do Forte\IMG_4501.JPG, Praia do Forte\IMG_4502.HEIC
+            2019\01 - Réveillon.par2: 01 - Réveillon\IMG_0001.JPG, 01 - Réveillon\IMG_0002.JPG
+            2019\07 - Viagem Bahia.par2: 07 - Viagem Bahia\IMG_4469.JPG, 07 - Viagem Bahia\Praia do Forte\IMG_4501.JPG, 07 - Viagem Bahia\Praia do Forte\IMG_4502.HEIC
             """,
             Describe(plan));
+        Assert.AreEqual("2019, 2019", string.Join(", ", plan.Sets.Select(set => set.Where)), "Where each is saved.");
     }
 
     [TestMethod]
@@ -62,11 +63,35 @@ public sealed class CreationPlanTests
 
         Assert.AreEqual(
             """
+            2019\01 - Réveillon.par2: 01 - Réveillon\IMG_0001.JPG, 01 - Réveillon\IMG_0002.JPG
+            2019\07 - Viagem Bahia.par2: 07 - Viagem Bahia\IMG_4469.JPG, 07 - Viagem Bahia\Praia do Forte\IMG_4501.JPG, 07 - Viagem Bahia\Praia do Forte\IMG_4502.HEIC
             2019\2019.par2: capa.jpg
-            2019\01 - Réveillon\01 - Réveillon.par2: IMG_0001.JPG, IMG_0002.JPG
-            2019\07 - Viagem Bahia\07 - Viagem Bahia.par2: IMG_4469.JPG, Praia do Forte\IMG_4501.JPG, Praia do Forte\IMG_4502.HEIC
             """,
             Describe(plan));
+    }
+
+    [TestMethod]
+    public void PerSubfolderRefusesASubfolderNamedAsTheLooseFilesSet()
+    {
+        // "2019\2019.par2" would be both the set of the files loose in 2019 and the set of the subfolder "2019".
+        Write("capa.jpg", 100);
+        Write(@"2019\IMG_0003.JPG", 100);
+
+        var plan = CreationPlan.For(Selection.Read([_year]), CreationMode.PerSubfolder);
+
+        Assert.AreEqual(
+            "A subpasta \"2019\" e os arquivos soltos em \"2019\" teriam conjuntos com o mesmo nome, \"2019.par2\". Renomeie a subpasta ou escolha outro modo.",
+            plan.Problem);
+    }
+
+    [TestMethod]
+    public void PerSubfolderTakesASubfolderNamedAsTheChosenFolderWhenNoFileIsLoose()
+    {
+        Write(@"2019\IMG_0003.JPG", 100);
+
+        var plan = PlanFor(CreationMode.PerSubfolder);
+
+        Assert.AreEqual(@"2019\2019.par2: 2019\IMG_0003.JPG", Describe(plan).Split('\n')[^1]);
     }
 
     [TestMethod]
@@ -114,8 +139,8 @@ public sealed class CreationPlanTests
 
         Assert.AreEqual(
             """
-            2019\01 - Réveillon\01 - Réveillon.par2: IMG_0001.JPG, IMG_0002.JPG
-            2019\07 - Viagem Bahia\07 - Viagem Bahia.par2: IMG_4469.JPG, Praia do Forte\IMG_4501.JPG, Praia do Forte\IMG_4502.HEIC
+            2019\01 - Réveillon.par2: 01 - Réveillon\IMG_0001.JPG, 01 - Réveillon\IMG_0002.JPG
+            2019\07 - Viagem Bahia.par2: 07 - Viagem Bahia\IMG_4469.JPG, 07 - Viagem Bahia\Praia do Forte\IMG_4501.JPG, 07 - Viagem Bahia\Praia do Forte\IMG_4502.HEIC
             """,
             Describe(plan));
     }

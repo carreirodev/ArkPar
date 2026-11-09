@@ -64,6 +64,47 @@ public sealed class SetSearchTests
     }
 
     [TestMethod]
+    public void SetBesideTheSubfolderOfItsNameProtectsThatSubfolder()
+    {
+        // Made per subfolder: "Praia.par2" lies in 2019, beside the "Praia" it protects. "2019.par2" covers the loose files.
+        Write("Praia.par2");
+        Write(@"Praia\IMG_0001.JPG");
+        Write("2019.par2");
+        Write(@"Natal\Natal.par2");
+
+        var found = SetSearch.Find(_year);
+
+        Assert.AreEqual(
+            @"2019.par2 → 2019; Praia.par2 → 2019\Praia; Natal\Natal.par2 → 2019\Natal",
+            string.Join("; ", found.Sets.Select(set => $"{Path.GetRelativePath(_year, set.RecoveryFile)} → {Path.GetRelativePath(_root, set.ProtectedFolder)}")));
+        Assert.IsTrue(found.Sets.All(set => set.Folder == Path.GetDirectoryName(set.RecoveryFile)), "Where each lies.");
+    }
+
+    [TestMethod]
+    public void SetNamedAsItsOwnFolderProtectsThatFolderEvenBesideASubfolderOfTheName()
+    {
+        // "2019\2019.par2" is the set of 2019 itself (one set for everything, or its loose files), not of "2019\2019".
+        Write("2019.par2");
+        Write(@"2019\2019.par2");
+
+        var found = SetSearch.Find(_year);
+
+        Assert.AreEqual(@"2019; 2019\2019", string.Join("; ", found.Sets.Select(set => Path.GetRelativePath(_root, set.ProtectedFolder))));
+    }
+
+    [TestMethod]
+    public void ReadyDraftBesideASubfolderProtectsItAsTheSetItWillBe()
+    {
+        Write("Praia.arkpar-pronto.par2");
+        Write(@"Praia\IMG_0001.JPG");
+        Write("praia.vol0+1.par2");
+
+        var found = SetSearch.Find(_year);
+
+        Assert.AreEqual(@"2019\Praia; 2019\Praia", string.Join("; ", found.Sets.Select(set => Path.GetRelativePath(_root, set.ProtectedFolder))), "As the folder is spelled.");
+    }
+
+    [TestMethod]
     public void SetWithoutItsIndexIsVerifiedFromItsFirstRecoveryFile()
     {
         Write(@"Praia\Praia.vol10+10.par2");

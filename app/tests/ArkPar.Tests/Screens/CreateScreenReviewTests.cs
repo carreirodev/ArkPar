@@ -54,8 +54,8 @@ public sealed class CreateScreenReviewTests : IDisposable
     [TestMethod]
     public async Task TheListSaysForEachSetWhatTheCreateWillDoAndWhy()
     {
-        WriteSet(@"Outubro\Outubro.par2", @"Outubro\IMG_1001.JPG");
-        WriteSet(@"Novembro\Novembro.par2", @"Novembro\IMG_1101.JPG");
+        WriteSet("Outubro.par2", @"Outubro\IMG_1001.JPG");
+        WriteSet("Novembro.par2", @"Novembro\IMG_1101.JPG");
 
         await ReadyAsync(CreationMode.PerSubfolder);
 
@@ -64,7 +64,7 @@ public sealed class CreateScreenReviewTests : IDisposable
             string.Join("; ", _screen.Items.Select(item => $"{item.Planned.Name}: {item.StatusText}")));
         Assert.AreEqual("3 de 4 conjuntos serão criados", _screen.SetsTitle);
         Assert.AreEqual($"3 conjuntos em {_root}", _screen.Destination, "The sets included.");
-        Assert.AreEqual("3 pastas", _screen.SaveIn);
+        Assert.AreEqual("2026", _screen.SaveIn, "Every set beside its subfolder, in the folder chosen.");
         Assert.AreEqual("1 destes conjuntos já existe e será substituído. Ele só sai da pasta depois que o novo ficar pronto, e vai para a Lixeira.", _screen.ReplaceWarning);
         Assert.AreEqual("Criar arquivos de recuperação", _screen.CreateText);
         Assert.HasCount(3, _screen.Estimate!.Sets, "Only the sets included.");
@@ -73,6 +73,25 @@ public sealed class CreateScreenReviewTests : IDisposable
 
         Assert.AreEqual("2026, Dezembro, Novembro", string.Join(", ", _engine.Runs.Select(run => SetNameOf(run))), "Outubro is skipped.");
         Assert.AreEqual(new Banner(BannerKind.Success, "Os arquivos de recuperação protegem 4 arquivos · 3,9 KB em 3 conjuntos.", $"6 arquivos · 1 KB, em {_root}"), _screen.Banner);
+    }
+
+    [TestMethod]
+    public async Task ASetMadeInsideItsSubfolderBeforeIsNeitherReplacedNorAWarning()
+    {
+        // Made when per subfolder still saved inside the subfolder: whole, so it stays where it is, untouched.
+        var inside = WriteSet(@"Outubro\Outubro.par2", @"Outubro\IMG_1001.JPG");
+
+        await ReadyAsync(CreationMode.PerSubfolder);
+        await WaitUntilAsync(() => !_screen.IsFindingOrphanedSets);
+
+        Assert.AreEqual("Criar · sem conjunto", _screen.Items.Single(item => item.Planned.Name == "Outubro").StatusText);
+        Assert.IsNull(_screen.ReplaceWarning);
+        Assert.IsFalse(_screen.HasOrphanedSets);
+
+        await CreateAllAsync();
+
+        Assert.IsTrue(File.Exists(inside));
+        Assert.IsEmpty(_recycled);
     }
 
     [TestMethod]
@@ -104,8 +123,8 @@ public sealed class CreateScreenReviewTests : IDisposable
     [TestMethod]
     public async Task ASetLeftOutIsNeverEstimated()
     {
-        WriteSet(@"Outubro\Outubro.par2", @"Outubro\IMG_1001.JPG");
-        var october = Path.Combine(_root, @"Outubro\Outubro.par2");
+        WriteSet("Outubro.par2", @"Outubro\IMG_1001.JPG");
+        var october = Path.Combine(_root, "Outubro.par2");
 
         await ReadyAsync(CreationMode.PerSubfolder);
         _screen.Redundancy = 20;
@@ -121,7 +140,7 @@ public sealed class CreateScreenReviewTests : IDisposable
     {
         await _screen.AddAsync([_root]);
         _screen.Mode = CreationMode.PerSubfolder;
-        var december = Path.Combine(_root, @"Dezembro\Dezembro.par2");
+        var december = Path.Combine(_root, "Dezembro.par2");
         while (_trial.Trials.Where(trial => !trial.Answer.IsCompleted && trial.Create.RecoveryFile != december).ToList() is { Count: > 0 } others)
         {
             others.ForEach(trial => trial.Finish(OneSet));
@@ -146,7 +165,7 @@ public sealed class CreateScreenReviewTests : IDisposable
     {
         await _screen.AddAsync([_root]);
         _screen.Mode = CreationMode.PerSubfolder;
-        var december = Path.Combine(_root, @"Dezembro\Dezembro.par2");
+        var december = Path.Combine(_root, "Dezembro.par2");
         while (_trial.Trials.Where(trial => !trial.Answer.IsCompleted && trial.Create.RecoveryFile != december).ToList() is { Count: > 0 } others)
         {
             others.ForEach(trial => trial.Finish(OneSet));
@@ -214,7 +233,7 @@ public sealed class CreateScreenReviewTests : IDisposable
     [TestMethod]
     public async Task CreatingWaitsUntilEverySetIsCompared()
     {
-        WriteSet(@"Outubro\Outubro.par2", @"Outubro\IMG_1001.JPG");
+        WriteSet("Outubro.par2", @"Outubro\IMG_1001.JPG");
         var lists = new TaskCompletionSource();
         _listing.Gate = lists.Task;
 
@@ -238,7 +257,7 @@ public sealed class CreateScreenReviewTests : IDisposable
     [TestMethod]
     public async Task ASetFoundStaleOnceComparedIsAnnouncedToTheScreen()
     {
-        WriteSet(@"Novembro\Novembro.par2", @"Novembro\IMG_1101.JPG");
+        WriteSet("Novembro.par2", @"Novembro\IMG_1101.JPG");
         var lists = new TaskCompletionSource();
         _listing.Gate = lists.Task;
         await _screen.AddAsync([_root]);
@@ -257,7 +276,7 @@ public sealed class CreateScreenReviewTests : IDisposable
     [TestMethod]
     public async Task ChangingTheModeWhileComparingStopsTheComparing()
     {
-        WriteSet(@"Outubro\Outubro.par2", @"Outubro\IMG_1001.JPG");
+        WriteSet("Outubro.par2", @"Outubro\IMG_1001.JPG");
         var lists = new TaskCompletionSource();
         _listing.Gate = lists.Task;
         await _screen.AddAsync([_root]);
@@ -276,7 +295,7 @@ public sealed class CreateScreenReviewTests : IDisposable
     [TestMethod]
     public async Task ASetThatCannotBeReadIsLeftOutWithTheReason()
     {
-        var index = WriteSet(@"Outubro\Outubro.par2");
+        var index = WriteSet("Outubro.par2");
         _listing.Fails(index, "valid file is not found");
 
         await ReadyAsync(CreationMode.PerSubfolder);

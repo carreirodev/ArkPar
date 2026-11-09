@@ -70,7 +70,7 @@ Abra **Criar** e arraste arquivos ou pastas para a janela, ou escolha no disco.
 | Na tela | O que faz | Exemplo: escolhendo `D:\Fotos\2019` |
 | --- | --- | --- |
 | **Um conjunto para tudo** | Um conjunto só para tudo, com as subpastas | 1 conjunto em `2019` |
-| **Um por subpasta** | Um conjunto para cada subpasta direta | 1 conjunto em `2019\Praia`, 1 em `2019\Natal` |
+| **Um por subpasta** | Um conjunto para cada subpasta direta, gravado ao lado dela | `Praia.par2` e `Natal.par2` em `2019`, ao lado das pastas `Praia` e `Natal` |
 | **Um por pasta** | Um conjunto em cada pasta que tem arquivos, em qualquer nível | 1 conjunto em cada pasta, cobrindo só os arquivos dela |
 | **Um por arquivo** | Um conjunto para cada arquivo | 1 conjunto por foto |
 

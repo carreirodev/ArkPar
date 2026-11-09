@@ -71,6 +71,25 @@ public sealed class FolderVerifyScreenTests : IDisposable
     }
 
     [TestMethod]
+    public async Task SetsBesideTheirSubfoldersAreSummedUpUnderTheSubfolderEachProtects()
+    {
+        // Made per subfolder: every set lies in 2019, beside the subfolder it protects.
+        _found = new FoundSets(
+            [
+                RootSet,
+                new FoundSet(@"P:\Fotos\2019\Natal.par2", Root, "Natal") { ProtectedFolder = @"P:\Fotos\2019\Natal" },
+                new FoundSet(@"P:\Fotos\2019\Praia.par2", Root, "Praia") { ProtectedFolder = @"P:\Fotos\2019\Praia" },
+            ],
+            []);
+
+        await _screen.ChooseAsync(Root);
+
+        Assert.AreEqual("3 conjuntos em 3 pastas", _screen.FoundText);
+        CollectionAssert.AreEqual(FolderNames, _screen.Folders.Select(folder => folder.Name).ToArray());
+        Assert.AreEqual("2019.par2, Natal.par2, Praia.par2", string.Join(", ", _screen.Folders.Select(folder => folder.SetsText)));
+    }
+
+    [TestMethod]
     public async Task FolderWithoutSetsSaysSo()
     {
         _found = new FoundSets([], []);

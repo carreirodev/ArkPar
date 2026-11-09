@@ -5,7 +5,8 @@ using System.ComponentModel;
 namespace ArkPar.Screens;
 
 /// <summary>
-/// A folder of a folder verification: one line of the summary, with the sets directly in it. A folder with one
+/// A folder of a folder verification: one line of the summary, with the sets that protect it: those directly in
+/// it, and the one of its name beside it (<see cref="FoundSet.ProtectedFolder"/>). A folder with one
 /// set opens that set; one with several lists those with a problem. A folder the search could not look into is a
 /// line too, never verified, so the summary never says more was verified than was.
 /// </summary>
@@ -29,7 +30,7 @@ public sealed class CheckedFolder : Observable
     /// <summary>The folder in full.</summary>
     public string Path { get; }
 
-    /// <summary>The sets directly in the folder, by name.</summary>
+    /// <summary>The sets summed up under the folder, in the order they are verified.</summary>
     public IReadOnlyList<CheckedSet> Sets { get; }
 
     /// <summary>Why the search did not look into the folder; null when it did. Its sets, if any, are unknown.</summary>

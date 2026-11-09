@@ -17,6 +17,8 @@ public static class SetSearch
     /// <summary>
     /// The sets inside <paramref name="folder"/>: the folder's own first, by name, then each subfolder's, by
     /// name. A set is verified from its index file or, when the index is gone, from its first recovery file.
+    /// A set lying beside a subfolder of its name ("Praia.par2" beside "Praia", as per subfolder makes them)
+    /// protects that subfolder (<see cref="FoundSet.ProtectedFolder"/>).
     /// A whole drive takes a while: <paramref name="stop"/> ends the search between two folders.
     /// </summary>
     /// <exception cref="OperationCanceledException"><paramref name="stop"/> was canceled.</exception>
@@ -24,11 +26,28 @@ public static class SetSearch
     {
         var sets = new List<FoundSet>();
         var leftOut = new List<LeftOutFolder>();
-        Search(new DirectoryInfo(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder))), sets, leftOut, stop);
-        return new FoundSets(sets, leftOut);
+        var searched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Search(new DirectoryInfo(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder))), sets, leftOut, searched, stop);
+
+        // Only a subfolder that was searched: one left out keeps its own line, as not verified.
+        return new FoundSets([.. sets.Select(set => UnderItsSubfolder(set, searched))], leftOut);
     }
 
-    private static void Search(DirectoryInfo folder, List<FoundSet> sets, List<LeftOutFolder> leftOut, CancellationToken stop)
+    /// <summary>
+    /// <paramref name="set"/>, summed up under the subfolder of its name beside it when that one is among
+    /// <paramref name="searched"/>. A ready draft ("Praia.arkpar-pronto") goes by the name of the set it will be.
+    /// A set named as the folder holding it ("2019\2019.par2") is that folder's own, whatever lies beside it.
+    /// </summary>
+    private static FoundSet UnderItsSubfolder(FoundSet set, HashSet<string> searched)
+    {
+        var name = set.Name.EndsWith(SetCreation.ReadySuffix, StringComparison.OrdinalIgnoreCase) ? set.Name[..^SetCreation.ReadySuffix.Length] : set.Name;
+        return !name.Equals(Selection.FolderName(set.Folder), StringComparison.OrdinalIgnoreCase)
+            && searched.TryGetValue(Path.Combine(set.Folder, name), out var subfolder)
+            ? set with { ProtectedFolder = subfolder }
+            : set;
+    }
+
+    private static void Search(DirectoryInfo folder, List<FoundSet> sets, List<LeftOutFolder> leftOut, HashSet<string> searched, CancellationToken stop)
     {
         stop.ThrowIfCancellationRequested();
         List<FileSystemInfo> entries;
@@ -43,6 +62,7 @@ public static class SetSearch
             return;
         }
 
+        searched.Add(folder.FullName);
         sets.AddRange(Selection.SetFilesAmong(entries.OfType<FileInfo>().Select(file => file.FullName))
             // A draft a create left half written ("Viagem.arkpar-novo") is no set: verifying it would tell a problem
             // where the files are protected. A ready draft ("Viagem.arkpar-pronto") is whole, and is verified.
@@ -67,7 +87,7 @@ public static class SetSearch
             }
             else
             {
-                Search(subfolder, sets, leftOut, stop);
+                Search(subfolder, sets, leftOut, searched, stop);
             }
         }
     }
@@ -81,7 +101,14 @@ public sealed record FoundSets(IReadOnlyList<FoundSet> Sets, IReadOnlyList<LeftO
 /// <param name="RecoveryFile">The file the engine verifies it from, in full.</param>
 /// <param name="Folder">The folder holding it, in full.</param>
 /// <param name="Name">Its name, e.g. "Praia" for "Praia.par2" and "Praia.vol0+10.par2".</param>
-public sealed record FoundSet(string RecoveryFile, string Folder, string Name);
+public sealed record FoundSet(string RecoveryFile, string Folder, string Name)
+{
+    /// <summary>
+    /// The folder it is summed up under, in full: the subfolder of its name beside it ("2019\Praia" for
+    /// "2019\Praia.par2"), when there is one; otherwise the folder holding it.
+    /// </summary>
+    public string ProtectedFolder { get; init; } = Folder;
+}
 
 /// <summary>A folder the search did not look into, in full, and why.</summary>
 public sealed record LeftOutFolder(string Path, LeftOutReason Reason);

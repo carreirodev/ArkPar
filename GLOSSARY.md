@@ -53,11 +53,11 @@ A recovery set inside the folders chosen to create again that no set the create 
 _Avoid_: leftover set, lost set
 
 **Draft**:
-The files of a recovery set while the engine is still writing them, under a name of their own (`Viagem.arkpar-novo.par2` for the set `Viagem`), so the set of the same name already in the folder stays untouched until the new one is whole. A draft is not a recovery set yet: creating never compares it with the files nor warns about it as an orphaned set, and one left behind by a create that was interrupted is removed by the next create of that set.
+The files of a recovery set while the engine is still writing them, under a name of their own (`Viagem.arkpar-novo.par2` for the set `Viagem`), so the set of the same name already in the folder stays untouched until the new one is whole. A draft is not a recovery set yet: creating never compares it with the files nor warns about it as an orphaned set, verifying a folder never lists it, and one left behind by a create that was interrupted is removed by the next create of that set.
 _Avoid_: temporary set, partial set, half-written set
 
 **Ready draft**:
-A draft the engine finished writing, renamed (`Viagem.arkpar-pronto.par2`) for the moment between the set it replaces leaving the folder and the new one taking its name. It is whole. Left alone in a folder, without the set of its name, it may be the only set of those files, so creating never removes it: it stops and asks the user to check it.
+A draft the engine finished writing, renamed (`Viagem.arkpar-pronto.par2`) for the moment between the set it replaces leaving the folder and the new one taking its name. It is whole. Left alone in a folder, without the set of its name, it may be the only set of those files, so creating never removes it: it stops and asks the user to check it. Verifying a folder lists it and verifies it, as a set of its own name.
 _Avoid_: finished draft, pending set
 
 **Set lock**:

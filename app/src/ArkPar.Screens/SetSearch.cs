@@ -4,9 +4,10 @@ namespace ArkPar.Screens;
 
 /// <summary>
 /// Finds the recovery sets inside a folder, at any depth, for a folder verification. Hidden and system folders and
-/// files are searched too: a set the user hid is still theirs to verify. Only Windows' own folders stay out, and
-/// a folder that cannot be opened, or a link to another folder (not followed, so the search never loops), is
-/// told as left out. Run it off the screen's thread: a big folder takes a while.
+/// files are searched too: a set the user hid is still theirs to verify. Only Windows' own folders and the drafts
+/// an interrupted create left half written stay out, and a folder that cannot be opened, or a link to another
+/// folder (not followed, so the search never loops), is told as left out. Run it off the screen's thread: a big
+/// folder takes a while.
 /// </summary>
 public static class SetSearch
 {
@@ -43,6 +44,9 @@ public static class SetSearch
         }
 
         sets.AddRange(Selection.SetFilesAmong(entries.OfType<FileInfo>().Select(file => file.FullName))
+            // A draft a create left half written ("Viagem.arkpar-novo") is no set: verifying it would tell a problem
+            // where the files are protected. A ready draft ("Viagem.arkpar-pronto") is whole, and is verified.
+            .Where(set => !SetCreation.IsUnfinishedDraftName(set.Key))
             .Select(set =>
             {
                 var index = Path.Combine(folder.FullName, set.Key + Selection.RecoveryExtension);

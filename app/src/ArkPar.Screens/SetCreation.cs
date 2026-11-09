@@ -64,7 +64,10 @@ internal sealed class SetCreation(
 
     /// <summary>Whether <paramref name="setName"/> ("Viagem.arkpar-novo", "Viagem.arkpar-pronto") is a draft's: not a set yet.</summary>
     internal static bool IsDraftName(string setName) =>
-        setName.EndsWith(DraftSuffix, StringComparison.OrdinalIgnoreCase) || setName.EndsWith(ReadySuffix, StringComparison.OrdinalIgnoreCase);
+        IsUnfinishedDraftName(setName) || setName.EndsWith(ReadySuffix, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Whether <paramref name="setName"/> ("Viagem.arkpar-novo") is the name of a draft the engine did not finish writing: never whole.</summary>
+    internal static bool IsUnfinishedDraftName(string setName) => setName.EndsWith(DraftSuffix, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>How long a killed engine gets to let go of its files before the partial ones are removed.</summary>
     private static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);

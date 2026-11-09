@@ -11,7 +11,7 @@ namespace ArkPar.Tests.Screens;
 [TestClass]
 public sealed class SetSearchTests
 {
-    private static readonly string[] PraiaAndItsDraft = ["Praia", "Praia.arkpar-novo"];
+    private static readonly string[] PraiaAndItsReadyDraft = ["Praia", "Praia.arkpar-pronto"];
     private static readonly string[] HiddenAndSystemSets = ["Natal", "Oculto", "Praia", "Privado"];
 
     private string _root = "";
@@ -154,14 +154,28 @@ public sealed class SetSearchTests
     }
 
     [TestMethod]
-    public void DraftLeftByAnEarlierCreateIsFoundUnderItsOwnName()
+    public void DraftLeftByAnInterruptedCreateIsNotASet()
     {
         Write(@"Praia\Praia.par2");
         Write(@"Praia\Praia.arkpar-novo.par2");
+        Write(@"Praia\Praia.arkpar-novo.vol0+10.par2");
+        Write(@"Natal\Natal.ARKPAR-NOVO.vol0+10.par2");
 
         var found = SetSearch.Find(_year);
 
-        CollectionAssert.AreEqual(PraiaAndItsDraft, found.Sets.Select(set => set.Name).ToArray());
+        Assert.AreEqual("Praia", found.Sets.Single().Name, "A draft is never whole: verifying it would tell a problem where the files are protected.");
+        Assert.IsEmpty(found.LeftOut);
+    }
+
+    [TestMethod]
+    public void ReadyDraftIsFoundUnderItsOwnName()
+    {
+        Write(@"Praia\Praia.par2");
+        Write(@"Praia\Praia.arkpar-pronto.par2");
+
+        var found = SetSearch.Find(_year);
+
+        CollectionAssert.AreEqual(PraiaAndItsReadyDraft, found.Sets.Select(set => set.Name).ToArray(), "It is whole, and may be the only set of its files.");
     }
 
     [TestMethod]

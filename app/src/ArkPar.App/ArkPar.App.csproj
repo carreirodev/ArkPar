@@ -6,8 +6,8 @@
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>ArkPar.App</RootNamespace>
     <AssemblyName>ArkPar</AssemblyName>
-    <!-- The version Explorer shows for ArkPar.exe; the GitHub release carries the same number (v1.0.0). -->
-    <Version>1.0.0</Version>
+    <!-- The version Explorer shows for ArkPar.exe; the GitHub release carries the same number (v1.1.0). -->
+    <Version>1.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Embedded in ArkPar.exe: Explorer shows it for the exe and, through DefaultIcon, for .par2 files. -->
     <ApplicationIcon>Assets\ArkPar.ico</ApplicationIcon>

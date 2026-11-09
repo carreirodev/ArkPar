@@ -81,12 +81,11 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
     public string ComparingText => $"Conferindo os conjuntos que já existem… {_comparedCount.ToString("N0", PtBrazil.Culture)} de {Items.Count.ToString("N0", PtBrazil.Culture)}";
 
     /// <summary>Why sets already in the folders could not be read, in technical terms; null when every one could.</summary>
-    public string? Details => Items
+    public string? Details => TextJoin.All(Items
         .Select(item => (File: item.Planned.RecoveryFile, item.Comparison.Details))
         .Concat(OrphanedSets.Select(set => (File: set.Path, set.Details)))
         .Where(set => set.Details is not null)
-        .Select(set => $"{set.File}:\n{set.Details}")
-        .Aggregate((string?)null, (all, details) => SetCreation.Join(all, details));
+        .Select(set => $"{set.File}:\n{set.Details}"));
 
     private int ComparedCount
     {
@@ -132,7 +131,7 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
                     }
                 }
             }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            catch (Exception failure) when (failure.IsFileAccessFailure())
             {
                 // A folder that cannot be listed now: its sets wait for the user, with the reason in Detalhes técnicos.
                 setsIn[folder.Key] = null;
@@ -207,7 +206,7 @@ public sealed class SetReview(Func<string, CancellationToken, Task<SetListing>> 
                 {
                     setsThere = Selection.SetFilesIn(folder);
                 }
-                catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+                catch (Exception failure) when (failure.IsFileAccessFailure())
                 {
                     unreadable.Add(new OrphanedSet(Selection.FolderName(folder), folder, where, "Não foi possível ler a pasta; o motivo está em Detalhes técnicos", failure.ToString())
                     {

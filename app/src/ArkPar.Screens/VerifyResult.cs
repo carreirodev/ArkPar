@@ -43,10 +43,20 @@ public enum ProblemKind
 
 /// <summary>A file with a problem, shown as a card.</summary>
 /// <param name="Name">Path inside the protected folder, e.g. <c>viagem\ônibus.jpg</c>.</param>
-/// <param name="Tag">The label on the card: "Danificado", "Faltando", "Nome trocado" or "Reparado".</param>
 /// <param name="ImagePath">The file on disk to take the thumbnail from; null when there is none (missing).</param>
 /// <param name="Meta">Size and date, e.g. "6,2 MB · 14/07/2019"; a missing file has no date.</param>
-public sealed record ProblemFile(string Name, ProblemKind Kind, string Tag, string? ImagePath, string Meta);
+public sealed record ProblemFile(string Name, ProblemKind Kind, string? ImagePath, string Meta)
+{
+    /// <summary>The label on the card.</summary>
+    public string Tag => Kind switch
+    {
+        ProblemKind.Damaged => "Danificado",
+        ProblemKind.Missing => "Faltando",
+        ProblemKind.Misnamed => "Nome trocado",
+        ProblemKind.Repaired => "Reparado",
+        _ => throw new InvalidOperationException($"No tag for {Kind}."),
+    };
+}
 
 /// <summary>An intact file, shown as a row.</summary>
 public sealed record CompleteFile(string Name, string Size, string Date);

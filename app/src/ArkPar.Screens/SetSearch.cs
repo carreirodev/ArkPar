@@ -35,23 +35,18 @@ public static class SetSearch
         {
             entries = [.. folder.EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false })];
         }
-        catch (Exception failure) when (failure is UnauthorizedAccessException or IOException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             // Said on the screen as not verified; the sets in the other folders are still verified.
             leftOut.Add(new LeftOutFolder(folder.FullName, LeftOutReason.Unreadable));
             return;
         }
 
-        sets.AddRange(entries
-            .OfType<FileInfo>()
-            .Select(file => (File: file.FullName, Match: Selection.SetNameOf().Match(file.Name)))
-            .Where(file => file.Match.Success)
-            .GroupBy(file => file.Match.Groups["name"].Value, StringComparer.OrdinalIgnoreCase)
+        sets.AddRange(Selection.SetFilesAmong(entries.OfType<FileInfo>().Select(file => file.FullName))
             .Select(set =>
             {
-                var files = set.Select(file => file.File).Order(StringComparer.OrdinalIgnoreCase).ToList();
                 var index = Path.Combine(folder.FullName, set.Key + Selection.RecoveryExtension);
-                var recoveryFile = files.FirstOrDefault(file => file.Equals(index, StringComparison.OrdinalIgnoreCase)) ?? files[0];
+                var recoveryFile = set.Value.FirstOrDefault(file => file.Equals(index, StringComparison.OrdinalIgnoreCase)) ?? set.Value[0];
                 return new FoundSet(recoveryFile, folder.FullName, set.Key);
             })
             .OrderBy(set => set.Name, StringComparer.CurrentCultureIgnoreCase));

@@ -85,11 +85,12 @@ public sealed class VerifyScreenTests : IDisposable
         CollectionAssert.AreEqual(
             new[]
             {
-                new ProblemFile("praia 01.jpg", ProblemKind.Damaged, "Danificado", @"P:\Fotos de família\praia 01.jpg", "1,9 MB · 14/07/2019"),
-                new ProblemFile(@"viagem\ônibus.jpg", ProblemKind.Missing, "Faltando", ImagePath: null, "1,9 MB"),
-                new ProblemFile("aniversário.jpg", ProblemKind.Misnamed, "Nome trocado", @"P:\Fotos de família\aniversario renomeado.jpg", "1,9 MB · 14/07/2019"),
+                new ProblemFile("praia 01.jpg", ProblemKind.Damaged, @"P:\Fotos de família\praia 01.jpg", "1,9 MB · 14/07/2019"),
+                new ProblemFile(@"viagem\ônibus.jpg", ProblemKind.Missing, ImagePath: null, "1,9 MB"),
+                new ProblemFile("aniversário.jpg", ProblemKind.Misnamed, @"P:\Fotos de família\aniversario renomeado.jpg", "1,9 MB · 14/07/2019"),
             },
             _screen.ProblemFiles.ToArray());
+        Assert.AreEqual("Danificado, Faltando, Nome trocado", string.Join(", ", _screen.ProblemFiles.Select(file => file.Tag)));
         Assert.IsEmpty(_screen.CompleteFiles);
         Assert.AreEqual("Com problema", _screen.ProblemsHeading);
     }
@@ -253,11 +254,12 @@ public sealed class VerifyScreenTests : IDisposable
         CollectionAssert.AreEqual(
             new[]
             {
-                new ProblemFile("praia 01.jpg", ProblemKind.Repaired, "Reparado", @"P:\Fotos de família\praia 01.jpg", "1,9 MB · 14/07/2019"),
-                new ProblemFile(@"viagem\ônibus.jpg", ProblemKind.Repaired, "Reparado", @"P:\Fotos de família\viagem\ônibus.jpg", "1,9 MB · 14/07/2019"),
-                new ProblemFile("aniversário.jpg", ProblemKind.Repaired, "Reparado", @"P:\Fotos de família\aniversário.jpg", "1,9 MB · 14/07/2019"),
+                new ProblemFile("praia 01.jpg", ProblemKind.Repaired, @"P:\Fotos de família\praia 01.jpg", "1,9 MB · 14/07/2019"),
+                new ProblemFile(@"viagem\ônibus.jpg", ProblemKind.Repaired, @"P:\Fotos de família\viagem\ônibus.jpg", "1,9 MB · 14/07/2019"),
+                new ProblemFile("aniversário.jpg", ProblemKind.Repaired, @"P:\Fotos de família\aniversário.jpg", "1,9 MB · 14/07/2019"),
             },
             _screen.ProblemFiles.ToArray());
+        Assert.AreEqual("Reparado, Reparado, Reparado", string.Join(", ", _screen.ProblemFiles.Select(file => file.Tag)));
     }
 
     [TestMethod]

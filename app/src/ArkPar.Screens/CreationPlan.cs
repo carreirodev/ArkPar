@@ -64,7 +64,7 @@ public sealed class CreationPlan
             return Empty;
         }
 
-        var files = selection.Files.Select((file, index) => (Path: file, Size: selection.FileSizes[index])).ToList();
+        var files = selection.Files;
         IReadOnlyList<PlannedSet> sets = mode switch
         {
             CreationMode.SingleSet => [SetOf(recoveryFile, baseDirectory, files, baseDirectory)],
@@ -83,7 +83,7 @@ public sealed class CreationPlan
     }
 
     /// <summary>One set in each folder <paramref name="folderOf"/> gives, named after it.</summary>
-    private static List<PlannedSet> ByFolder(List<(string Path, long Size)> files, Func<string, string> folderOf, string chosenFolder) =>
+    private static List<PlannedSet> ByFolder(IReadOnlyList<SelectedFile> files, Func<string, string> folderOf, string chosenFolder) =>
         Ordered(files
             .GroupBy(file => folderOf(file.Path), StringComparer.OrdinalIgnoreCase)
             .Select(group => SetOf(Path.Combine(group.Key, Selection.FolderName(group.Key) + Selection.RecoveryExtension), group.Key, [.. group], chosenFolder)));
@@ -104,7 +104,7 @@ public sealed class CreationPlan
     ];
 
     /// <param name="chosenFolder">The folder holding what was chosen (<see cref="Selection.BaseDirectory"/>), where <see cref="PlannedSet.Where"/> starts.</param>
-    private static PlannedSet SetOf(string recoveryFile, string baseDirectory, IReadOnlyList<(string Path, long Size)> files, string chosenFolder) =>
+    private static PlannedSet SetOf(string recoveryFile, string baseDirectory, IReadOnlyList<SelectedFile> files, string chosenFolder) =>
         new(recoveryFile, baseDirectory, [.. files.Select(file => file.Path)], files.Sum(file => file.Size))
         {
             Where = WhereOf(baseDirectory, chosenFolder),

@@ -52,6 +52,18 @@ _Avoid_: outdated, old set
 A recovery set inside the folders chosen to create again that no set the create will make has the name of, and whose files are partly or all gone from the disk (a photo deleted in per file, a folder left empty in per folder). Creating never makes nor remakes it; the list before creating shows it as a warning to use verify and repair, since it may be the only way back to what was lost, and lets the user delete it, asking first when it still protects files on the disk or the drive has no Recycle Bin. A set of another mode whose files are all still there is not one. One that cannot be read, or whose folder cannot be read, is shown among them too, with the reason, since it may be one.
 _Avoid_: leftover set, lost set
 
+**Draft**:
+The files of a recovery set while the engine is still writing them, under a name of their own (`Viagem.arkpar-novo.par2` for the set `Viagem`), so the set of the same name already in the folder stays untouched until the new one is whole. A draft is not a recovery set yet: creating never compares it with the files nor warns about it as an orphaned set, and one left behind by a create that was interrupted is removed by the next create of that set.
+_Avoid_: temporary set, partial set, half-written set
+
+**Ready draft**:
+A draft the engine finished writing, renamed (`Viagem.arkpar-pronto.par2`) for the moment between the set it replaces leaving the folder and the new one taking its name. It is whole. Left alone in a folder, without the set of its name, it may be the only set of those files, so creating never removes it: it stops and asks the user to check it.
+_Avoid_: finished draft, pending set
+
+**Set lock**:
+What an ArkPar window holds while it makes a recovery set, so that a second window does not make the same set at the same time and take the first one's draft for a leftover. It reaches only the windows of one Windows user on one computer.
+_Avoid_: mutex, lock file (in user-facing text)
+
 **Redundancy**:
 The size of a recovery set relative to the files it protects, which is roughly how much damage it can repair (10% redundancy repairs up to about 10% of lost data).
 _Avoid_: parity, recovery rate

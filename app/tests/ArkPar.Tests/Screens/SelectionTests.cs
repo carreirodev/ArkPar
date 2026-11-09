@@ -61,7 +61,7 @@ public sealed class SelectionTests
 
         var selection = Selection.Read([_trip]);
 
-        CollectionAssert.AreEqual(new[] { photo }, selection.Files.ToArray());
+        CollectionAssert.AreEqual(new[] { photo }, selection.Files.Select(file => file.Path).ToArray());
         Assert.AreEqual("IMG_4469.JPG", string.Join(", ", selection.Tree.Single().Children.Select(child => child.Name)), "A folder with nothing to protect is not shown.");
     }
 

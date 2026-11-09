@@ -48,7 +48,7 @@ public sealed class VerifyScreenEngineTests(TestContext testContext)
         Assert.AreEqual(new FileCounts(Complete: 1, Damaged: 0, Missing: 1, Misnamed: 0), screen.Counts);
         Assert.AreEqual("1 arquivo com problema. O reparo é possível.", screen.Banner?.Title);
         Assert.StartsWith("Precisa de ", screen.Banner?.Detail ?? "");
-        Assert.AreEqual(new ProblemFile("ônibus.jpg", ProblemKind.Missing, "Faltando", ImagePath: null, "195 KB"), screen.ProblemFiles.Single());
+        Assert.AreEqual(new ProblemFile("ônibus.jpg", ProblemKind.Missing, ImagePath: null, "195 KB"), screen.ProblemFiles.Single());
         Assert.IsTrue(screen.CanRepair);
 
         await screen.RepairAsync().WaitAsync(TimeSpan.FromMinutes(2), testContext.CancellationToken);

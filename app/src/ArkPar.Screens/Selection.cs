@@ -36,11 +36,8 @@ public sealed partial class Selection
     /// <summary>A single set's index file, named after what was chosen, directly in <see cref="BaseDirectory"/>.</summary>
     public string? RecoveryFile { get; private init; }
 
-    /// <summary>Every file chosen, in full, in the order they were read from disk.</summary>
-    public IReadOnlyList<string> Files { get; private init; } = [];
-
-    /// <summary>The size of each of <see cref="Files"/>, in bytes, in the same order.</summary>
-    public IReadOnlyList<long> FileSizes { get; private init; } = [];
+    /// <summary>Every file chosen, in the order they were read from disk.</summary>
+    public IReadOnlyList<SelectedFile> Files { get; private init; } = [];
 
     public long TotalSize { get; private init; }
 
@@ -94,8 +91,7 @@ public sealed partial class Selection
         {
             BaseDirectory = baseDirectory,
             RecoveryFile = Path.Combine(baseDirectory, setName + RecoveryExtension),
-            Files = [.. files.Select(file => file.FullName)],
-            FileSizes = [.. files.Select(file => file.Length)],
+            Files = [.. files.Select(file => new SelectedFile(file.FullName, file.Length))],
             TotalSize = tree.Sum(node => node.Size),
             Tree = tree,
             Unreadable = unreadable,
@@ -135,29 +131,28 @@ public sealed partial class Selection
     /// <see cref="RecoverySetFiles"/> gives them: "Viagem" for "Viagem.par2" and "Viagem.vol0+19.par2". One read
     /// of the folder, however many sets are asked about.
     /// </summary>
-    public static IReadOnlyDictionary<string, IReadOnlyList<string>> SetFilesIn(string folder)
-    {
-        if (!Directory.Exists(folder))
-        {
-            return new Dictionary<string, IReadOnlyList<string>>();
-        }
+    public static IReadOnlyDictionary<string, IReadOnlyList<string>> SetFilesIn(string folder) =>
+        Directory.Exists(folder) ? SetFilesAmong(Directory.EnumerateFiles(folder, "*" + RecoveryExtension)) : SetFilesAmong([]);
 
-        return Directory.EnumerateFiles(folder, "*" + RecoveryExtension)
-            .Select(file => (File: file, Match: SetNameOf().Match(Path.GetFileName(file))))
-            .Where(file => file.Match.Success)
-            .GroupBy(file => file.Match.Groups["name"].Value, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                set => set.Key,
-                IReadOnlyList<string> (set) => [.. set.Select(file => file.File).Order(StringComparer.OrdinalIgnoreCase)],
-                StringComparer.OrdinalIgnoreCase);
-    }
+    /// <summary>
+    /// The sets <paramref name="files"/> (of one folder, in full) belong to, by name compared ignoring case, each
+    /// with its files in order. The one place a file's name tells its set; files that are not a set's are left out.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, IReadOnlyList<string>> SetFilesAmong(IEnumerable<string> files) => files
+        .Select(file => (File: file, Match: SetNameOf().Match(Path.GetFileName(file))))
+        .Where(file => file.Match.Success)
+        .GroupBy(file => file.Match.Groups["name"].Value, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(
+            set => set.Key,
+            IReadOnlyList<string> (set) => [.. set.Select(file => file.File).Order(StringComparer.OrdinalIgnoreCase)],
+            StringComparer.OrdinalIgnoreCase);
 
     [GeneratedRegex(@"^\.vol\d+\+\d+\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RecoveryFileSuffix();
 
     // The shortest name before an optional ".vol0+19" and ".par2": "IMG_4469.JPG" for "IMG_4469.JPG.vol0+1.par2".
     [GeneratedRegex(@"^(?<name>.+?)(\.vol\d+\+\d+)?\.par2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    internal static partial Regex SetNameOf();
+    private static partial Regex SetNameOf();
 
     private static List<string> RootsOf(List<string> fullPaths)
     {
@@ -256,8 +251,12 @@ public sealed partial class Selection
         (entry.Attributes & FileAttributes.ReparsePoint) != 0 && entry.LinkTarget is not null;
 
     private static bool IsRecoveryFile(string path) => path.EndsWith(RecoveryExtension, StringComparison.OrdinalIgnoreCase);
-
 }
+
+/// <summary>A file chosen on the Create screen.</summary>
+/// <param name="Path">The file, in full.</param>
+/// <param name="Size">How much it holds, in bytes, when it was read.</param>
+public sealed record SelectedFile(string Path, long Size);
 
 /// <summary>A folder or file in the tree of what a set covers.</summary>
 /// <param name="FileCount">How many files it holds, at any depth (1 for a file).</param>

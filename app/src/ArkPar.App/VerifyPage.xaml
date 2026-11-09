@@ -158,7 +158,7 @@
                     </StackPanel>
 
                     <!-- Choosing a file or a folder: shown whenever nothing is running. -->
-                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleIfNeither(Screen.IsRunning, FolderVerification.IsActive), Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:VerifyPage.ChoosingVisibility(Screen.IsRunning, FolderVerification.IsActive), Mode=OneWay}">
                         <Button Content="Abrir arquivo .par2…" Click="OnChooseFile" Style="{StaticResource AccentButtonStyle}" />
                         <Button Content="Verificar uma pasta…" Click="OnChooseFolder" />
                         <Button
@@ -168,7 +168,7 @@
                     </StackPanel>
 
                     <!-- A set's detail in a folder verification: back to the summary. -->
-                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:Ui.VisibleIfSecondOnly(Screen.IsRunning, FolderVerification.IsActive), Mode=OneWay}">
+                    <StackPanel Orientation="Horizontal" Spacing="8" Visibility="{x:Bind local:VerifyPage.BackToSummaryVisibility(Screen.IsRunning, FolderVerification.IsActive), Mode=OneWay}">
                         <Button Click="OnBackToSummary" Style="{StaticResource AccentButtonStyle}">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xE72B;" FontSize="14" />

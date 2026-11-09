@@ -193,7 +193,7 @@ public sealed class SettingsScreen : Observable
         {
             _file.Save(next);
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             Banner = new Banner(BannerKind.Error, "Não foi possível salvar as configurações.", "Confira se há espaço no disco e tente de novo.");
             Details = failure.ToString();

@@ -33,6 +33,13 @@ internal sealed record SetResult(SetEnd End, string? Note, string? Details)
     public long? FilesSize { get; init; }
 }
 
+/// <summary>How a screen follows the making of one set, and may still call it off.</summary>
+/// <param name="MayStart">Whether the engine may still start: not after Cancel, or once the window closed.</param>
+/// <param name="RunChanged">The engine task under way, once started, and null once it ended.</param>
+/// <param name="ActivityChanged">What is being done once the engine has ended, in the user's words.</param>
+/// <param name="Progress">The engine's progress.</param>
+internal sealed record CreationWatch(Func<bool> MayStart, Action<IEngineRun?> RunChanged, Action<string> ActivityChanged, IProgress<EngineProgress> Progress);
+
 /// <summary>
 /// Makes one recovery set without putting the set of the same name at risk: the engine writes the new set under
 /// a draft name (<c>Viagem.arkpar-novo.par2</c>). Once it is made, the draft is named ready
@@ -79,12 +86,8 @@ internal sealed class SetCreation(
         Path.Combine(Path.GetDirectoryName(recoveryFile) ?? "", Path.GetFileNameWithoutExtension(recoveryFile) + suffix + Selection.RecoveryExtension);
 
     /// <param name="replaces">Whether a set of the same name is there (<see cref="Replaced"/>), read just before.</param>
-    /// <param name="mayStart">Whether the engine may still start: not after Cancel, or once the window closed.</param>
-    /// <param name="runChanged">The engine task under way, once started, and null once it ended.</param>
-    /// <param name="activityChanged">What is being done once the engine has ended, in the user's words.</param>
-    /// <param name="progress">The engine's progress.</param>
-    public async Task<SetResult> CreateAsync(
-        bool replaces, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
+    /// <param name="watch">How the screen follows it.</param>
+    public async Task<SetResult> CreateAsync(bool replaces, CreationWatch watch)
     {
         // Said whenever the set is not made: the set there was never touched.
         var keptNote = replaces ? "O conjunto anterior continua na pasta." : null;
@@ -95,7 +98,7 @@ internal sealed class SetCreation(
             // create; and at once, not on another thread: without a draft, the engine starts at once.
             setLock = SetLock.TryTake(create.RecoveryFile);
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             return new SetResult(SetEnd.Failed, keptNote, failure.ToString())
             {
@@ -115,14 +118,13 @@ internal sealed class SetCreation(
 
         using (setLock)
         {
-            return await CreateHeldAsync(keptNote, mayStart, runChanged, activityChanged, progress).ConfigureAwait(true);
+            return await CreateHeldAsync(keptNote, watch).ConfigureAwait(true);
         }
     }
 
     /// <summary><see cref="CreateAsync"/>, once this window holds the set's <see cref="SetLock"/>.</summary>
     /// <param name="keptNote">What to say of the set there when the set is not made.</param>
-    private async Task<SetResult> CreateHeldAsync(
-        string? keptNote, Func<bool> mayStart, Action<IEngineRun?> runChanged, Action<string> activityChanged, IProgress<EngineProgress> progress)
+    private async Task<SetResult> CreateHeldAsync(string? keptNote, CreationWatch watch)
     {
         IEngineRun run;
         try
@@ -146,7 +148,7 @@ internal sealed class SetCreation(
                 // antivirus scanning it...) stops the create before the engine starts, with none removed.
                 if (await RemovePartialFilesAsync(onlyIfNoneHeld: true).ConfigureAwait(true) is { } held)
                 {
-                    return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(held), " "), held)
+                    return new SetResult(SetEnd.Failed, TextJoin.Of(keptNote, LeftoverText(held), " "), held)
                     {
                         Title = "Não foi possível apagar os arquivos incompletos de uma criação anterior.",
                         Hint = "Confira se algum arquivo .par2 da pasta está aberto em outro programa.",
@@ -154,21 +156,21 @@ internal sealed class SetCreation(
                 }
             }
 
-            if (!mayStart())
+            if (!watch.MayStart())
             {
                 return new SetResult(SetEnd.Canceled, keptNote, null);
             }
 
-            run = startEngine(_draft, progress);
+            run = startEngine(_draft, watch.Progress);
             _run = run;
-            runChanged(run);
+            watch.RunChanged(run);
         }
         catch (Exception failure)
         {
             return new SetResult(SetEnd.Failed, keptNote, failure.ToString())
             {
                 Title = "Não foi possível iniciar a criação.",
-                Hint = failure is IOException or UnauthorizedAccessException
+                Hint = failure.IsFileAccessFailure()
                     ? "Confira se a pasta permite gravar."
                     : "O ArkPar pode estar instalado de forma incompleta.",
             };
@@ -182,25 +184,25 @@ internal sealed class SetCreation(
         catch (Exception failure)
         {
             // Never leave the screen stuck on "Criando": whatever failed is shown, with its details.
-            EndRun(runChanged);
+            EndRun(watch.RunChanged);
             var leftover = await RemovePartialFilesAsync().ConfigureAwait(true);
-            return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(leftover), " "), Join(failure.ToString(), leftover))
+            return new SetResult(SetEnd.Failed, TextJoin.Of(keptNote, LeftoverText(leftover), " "), TextJoin.Of(failure.ToString(), leftover))
             {
                 Title = "A criação terminou de forma inesperada.",
             };
         }
 
-        EndRun(runChanged);
+        EndRun(watch.RunChanged);
         if (result.Outcome == EngineOutcome.Completed)
         {
-            return await TakeOverAsync(keptNote, activityChanged).ConfigureAwait(true);
+            return await TakeOverAsync(keptNote, watch.ActivityChanged).ConfigureAwait(true);
         }
 
         var partial = await RemovePartialFilesAsync().ConfigureAwait(true);
-        var notes = Join(keptNote, LeftoverText(partial), " ");
+        var notes = TextJoin.Of(keptNote, LeftoverText(partial), " ");
         return result.Outcome == EngineOutcome.Canceled
             ? new SetResult(SetEnd.Canceled, notes, partial)
-            : new SetResult(SetEnd.Failed, notes, Join(result.Output, partial))
+            : new SetResult(SetEnd.Failed, notes, TextJoin.Of(result.Output, partial))
             {
                 Title = "O motor não conseguiu criar os arquivos de recuperação.",
                 Hint = "Confira se há espaço no disco e se a pasta permite gravar.",
@@ -228,7 +230,7 @@ internal sealed class SetCreation(
             {
                 DeletePartialFiles();
             }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            catch (Exception failure) when (failure.IsFileAccessFailure())
             {
                 // A partial file held by another program (an antivirus scanning it...): it stays, and the window
                 // closes with no warning, as decided in WPC-399. The next create of this set removes it
@@ -236,9 +238,6 @@ internal sealed class SetCreation(
             }
         }
     }
-
-    internal static string? Join(string? first, string? second, string separator = "\n\n") =>
-        first is null ? second : second is null ? first : first + separator + second;
 
     /// <summary>
     /// Whether the draft left by an earlier create may be the only set of these files: ready, the set it replaced
@@ -266,11 +265,11 @@ internal sealed class SetCreation(
         {
             await Task.Run(() => RenameSet(_draft.RecoveryFile, _ready)).ConfigureAwait(true);
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             // Nothing touched yet: it ends as a create that failed, with only the draft removed.
             var leftover = await RemovePartialFilesAsync().ConfigureAwait(true);
-            return new SetResult(SetEnd.Failed, Join(keptNote, LeftoverText(leftover), " "), Join(failure.ToString(), leftover))
+            return new SetResult(SetEnd.Failed, TextJoin.Of(keptNote, LeftoverText(leftover), " "), TextJoin.Of(failure.ToString(), leftover))
             {
                 Title = "Não foi possível guardar o novo conjunto.",
                 Hint = "Confira se algum arquivo .par2 da pasta está aberto em outro programa.",
@@ -302,7 +301,7 @@ internal sealed class SetCreation(
         {
             await Task.Run(() => RenameSet(_ready, create.RecoveryFile)).ConfigureAwait(true);
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             return new SetResult(SetEnd.Failed, $"O novo conjunto ficou na pasta como \"{readyFile}\"; tire \"{ReadySuffix}\" do nome para usá-lo.", failure.ToString())
             {
@@ -317,7 +316,7 @@ internal sealed class SetCreation(
             var size = await Task.Run(() => recoveryFiles.Sum(file => new FileInfo(file).Length)).ConfigureAwait(true);
             return new SetResult(SetEnd.Created, null, null) { FileCount = recoveryFiles.Count, FilesSize = size };
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             // A recovery file moved or locked right after it was made (an antivirus...): the set is still there.
             return new SetResult(SetEnd.Created, null, failure.ToString());
@@ -366,7 +365,7 @@ internal sealed class SetCreation(
                 renamed.Add((file, renamedFile));
             }
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             foreach (var (original, renamedFile) in renamed)
             {
@@ -399,7 +398,7 @@ internal sealed class SetCreation(
             }).ConfigureAwait(true);
             return null;
         }
-        catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+        catch (Exception failure) when (failure.IsFileAccessFailure())
         {
             // A file held by another program (an antivirus scanning it...): the screen says which to delete.
             return failure.ToString();
@@ -420,7 +419,7 @@ internal sealed class SetCreation(
             {
                 DeleteOnceReleased(file);
             }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException)
+            catch (Exception failure) when (failure.IsFileAccessFailure())
             {
                 failures.Add(failure);
             }
@@ -451,7 +450,7 @@ internal sealed class SetCreation(
                 File.Delete(file);
                 return;
             }
-            catch (Exception failure) when (failure is IOException or UnauthorizedAccessException && attempt < Attempts)
+            catch (Exception failure) when (failure.IsFileAccessFailure() && attempt < Attempts)
             {
                 Thread.Sleep(50);
             }

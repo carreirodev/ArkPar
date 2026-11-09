@@ -40,14 +40,14 @@ public sealed class CheckedFolder : Observable
     /// <summary>Which sets the folder holds: "Praia.par2", or "300 conjuntos"; nothing when it was left out.</summary>
     public string SetsText => LeftOut is not null ? "" : Sets is [var only] ? only.FileName : PtBrazil.Count(Sets.Count, "conjunto", "conjuntos");
 
+    // A folder is as bad as its worst set (GLOSSARY.md, folder verification): the groups with a problem, worst first.
+    private static readonly HealthGroup[] WorstFirst = [HealthGroup.Unrepairable, HealthGroup.Repairable, HealthGroup.Unverified];
+
     /// <summary>The folder's group: not verified when left out; else its worst set's, once every set has one; null before.</summary>
     public HealthGroup? Group =>
         LeftOut is not null ? HealthGroup.Unverified
-        : Sets.Any(set => set.Group is null) ? null
-        : Sets.Any(set => set.Group == HealthGroup.Unrepairable) ? HealthGroup.Unrepairable
-        : Sets.Any(set => set.Group == HealthGroup.Repairable) ? HealthGroup.Repairable
-        : Sets.Any(set => set.Group == HealthGroup.Unverified) ? HealthGroup.Unverified
-        : HealthGroup.Complete;
+        : IsPending ? null
+        : WorstFirst.Cast<HealthGroup?>().FirstOrDefault(group => Sets.Any(set => set.Group == group)) ?? HealthGroup.Complete;
 
     /// <summary>
     /// How the folder is: its set's text, or for several sets how many are in each group, e.g.

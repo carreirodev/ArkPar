@@ -59,9 +59,12 @@ public sealed class FolderVerifyScreenEngineTests(TestContext testContext)
         Assert.AreEqual("1 arquivo com problema · o reparo é possível", screen.Folders[1].HealthText);
 
         await screen.OpenAsync(screen.Folders[1].Sets[0]).WaitAsync(Limit, testContext.CancellationToken);
-        Assert.AreEqual(new ProblemFile("ônibus.jpg", ProblemKind.Damaged, "Danificado", bus, detail.ProblemFiles.Single().Meta), detail.ProblemFiles.Single());
+        Assert.AreEqual(new ProblemFile("ônibus.jpg", ProblemKind.Damaged, bus, detail.ProblemFiles.Single().Meta), detail.ProblemFiles.Single());
         screen.CloseDetail();
 
+        // A repair sends the damaged photo it replaces to the Recycle Bin, and each run of the tests would leave
+        // one there: gone first, the photo is rebuilt all the same, with nothing to send.
+        File.Delete(bus);
         await screen.RepairAllAsync().WaitAsync(Limit, testContext.CancellationToken);
 
         Assert.AreEqual(new FolderCounts(Complete: 2, Repairable: 0, Unrepairable: 0, Unverified: 0), screen.Counts, screen.Details);

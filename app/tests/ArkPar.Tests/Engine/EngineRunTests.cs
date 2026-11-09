@@ -43,11 +43,13 @@ public sealed class EngineRunTests(TestContext testContext)
     }
 
     [TestMethod]
-    public async Task DamagedPhotoIsReportedThenRepaired()
+    public async Task DamagedPhotoIsReportedAndRebuiltOnceGone()
     {
         var photo = WritePhoto("praia 01.jpg", 1);
         var original = File.ReadAllBytes(photo);
-        await RunAsync(new EngineCommand.Create(RecoveryFile, _folder, [photo], RedundancyPercent: 10));
+
+        // Enough to rebuild the whole photo: see below.
+        await RunAsync(new EngineCommand.Create(RecoveryFile, _folder, [photo], RedundancyPercent: 100));
         var damaged = original.ToArray();
         damaged[100] ^= 0xFF;
         File.WriteAllBytes(photo, damaged);
@@ -57,6 +59,9 @@ public sealed class EngineRunTests(TestContext testContext)
         Assert.IsNotNull(verified.Report);
         Assert.AreEqual(photo, verified.Report.DamagedFiles.Single());
 
+        // A repair sends the damaged photo it replaces to the Recycle Bin (/br), and each run of the tests would
+        // leave one there: gone first, the photo is rebuilt all the same, with nothing to send.
+        File.Delete(photo);
         var repaired = await RunAsync(new EngineCommand.Repair(RecoveryFile));
         Assert.AreEqual(EngineOutcome.Completed, repaired.Outcome, repaired.Output);
         CollectionAssert.AreEqual(original, File.ReadAllBytes(photo));

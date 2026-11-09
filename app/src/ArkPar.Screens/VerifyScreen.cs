@@ -9,7 +9,7 @@ namespace ArkPar.Screens;
 /// when the set can fix them, repairs them. Use it from the screen's thread; the engine's progress
 /// is brought back to that thread.
 /// </summary>
-public sealed class VerifyScreen : Observable, IDisposable
+public sealed class VerifyScreen : EngineTaskScreen, IDisposable
 {
     private readonly Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> _startEngine;
     private readonly Func<string, DateTime?> _lastWritten;
@@ -17,12 +17,10 @@ public sealed class VerifyScreen : Observable, IDisposable
     private int _runNumber;
 
     private VerifyStage _stage;
-    private string _heading = "Verificar e reparar";
+    private const string IdleHeading = "Verificar e reparar";
+
+    private string _heading = IdleHeading;
     private string? _recoveryFile;
-    private string _activityText = "";
-    private double? _percent;
-    private bool _isPaused;
-    private Banner? _banner;
     private bool _canRepair;
     private FileCounts? _counts;
     private IReadOnlyList<ProblemFile> _problemFiles = [];
@@ -64,54 +62,6 @@ public sealed class VerifyScreen : Observable, IDisposable
 
     /// <summary>The recovery file being verified or repaired, in full.</summary>
     public string? RecoveryFile { get => _recoveryFile; private set => Set(ref _recoveryFile, value); }
-
-    /// <summary>What the engine is doing right now, e.g. "Lendo praia 01.jpg".</summary>
-    public string ActivityText { get => _activityText; private set => Set(ref _activityText, value); }
-
-    /// <summary>How far the current activity is, from 0 to 100; null before the engine reports any.</summary>
-    public double? Percent
-    {
-        get => _percent;
-        private set
-        {
-            if (Set(ref _percent, value))
-            {
-                Announce(nameof(IsPercentUnknown));
-            }
-        }
-    }
-
-    /// <summary>No percentage yet: the bar moves on its own.</summary>
-    public bool IsPercentUnknown => Percent is null;
-
-    public bool IsPaused
-    {
-        get => _isPaused;
-        private set
-        {
-            if (Set(ref _isPaused, value))
-            {
-                Announce(nameof(PauseText));
-            }
-        }
-    }
-
-    public string PauseText => IsPaused ? "Continuar" : "Pausar";
-
-    /// <summary>The result's headline; null while running and after a cancel.</summary>
-    public Banner? Banner
-    {
-        get => _banner;
-        private set
-        {
-            if (Set(ref _banner, value))
-            {
-                Announce(nameof(HasBanner));
-            }
-        }
-    }
-
-    public bool HasBanner => Banner is not null;
 
     public bool CanRepair { get => _canRepair; private set => Set(ref _canRepair, value); }
 
@@ -171,7 +121,7 @@ public sealed class VerifyScreen : Observable, IDisposable
         RecoveryFile = recoveryFile;
 
         // While the files' dates are read, the headline of the result shown before must not stand under this file.
-        Heading = "Verificar e reparar";
+        Heading = IdleHeading;
         Banner = null;
         CanRepair = false;
         Details = null;
@@ -189,17 +139,7 @@ public sealed class VerifyScreen : Observable, IDisposable
     /// </summary>
     public event EventHandler<Banner>? Finished;
 
-    public void TogglePause()
-    {
-        if (_run is null)
-        {
-            return;
-        }
-
-        _run.SetPaused(!_run.IsPaused);
-
-        IsPaused = _run.IsPaused;
-    }
+    public void TogglePause() => TogglePause(_run);
 
     public void Cancel() => _run?.Cancel();
 
@@ -211,8 +151,7 @@ public sealed class VerifyScreen : Observable, IDisposable
         var isRepair = command is EngineCommand.Repair;
         var failedHeading = isRepair ? "Não foi possível reparar" : "Não foi possível verificar";
         var runNumber = ++_runNumber;
-        Stage = isRepair ? VerifyStage.Repairing : VerifyStage.Verifying;
-        Heading = isRepair ? "Reparando" : "Verificando";
+        Enter(isRepair ? VerifyStage.Repairing : VerifyStage.Verifying, isRepair);
         ActivityText = isRepair ? "Conferindo os arquivos antes de reparar" : "Lendo o arquivo de recuperação";
         Percent = null;
         IsPaused = false;
@@ -291,8 +230,7 @@ public sealed class VerifyScreen : Observable, IDisposable
         switch (result.Outcome)
         {
             case EngineOutcome.Canceled:
-                Stage = VerifyStage.Canceled;
-                Heading = isRepair ? "Reparo cancelado" : "Verificação cancelada";
+                Enter(VerifyStage.Canceled, isRepair);
 
                 // The engine may have fixed some files before it stopped, so the earlier result no longer holds.
                 Banner = isRepair ? new Banner(BannerKind.Warning, "O reparo foi interrompido.", VerifyAgain) : null;
@@ -314,11 +252,9 @@ public sealed class VerifyScreen : Observable, IDisposable
         {
             // The report is the state before the repair, and the engine may have fixed some files before it
             // failed: showing that list would mislead, so the screen asks for a new verification instead.
-            Stage = VerifyStage.Failed;
-            Heading = "O reparo falhou";
-            Banner = new Banner(BannerKind.Error, "Não foi possível consertar todos os arquivos.", BlocksLacking(report.RecoveryBlocks) is { } lacking ? lacking + " " + VerifyAgain : VerifyAgain);
-            Details = result.Output;
-            ShowFiles(null);
+            Fail("O reparo falhou",
+                new Banner(BannerKind.Error, "Não foi possível consertar todos os arquivos.", BlocksLacking(report.RecoveryBlocks) is { } lacking ? lacking + " " + VerifyAgain : VerifyAgain),
+                result.Output);
             return;
         }
 
@@ -334,32 +270,43 @@ public sealed class VerifyScreen : Observable, IDisposable
         switch (result.Outcome)
         {
             case EngineOutcome.Completed when allFixed:
-                Stage = VerifyStage.Repaired;
-                Heading = "Reparo concluído";
+                Enter(VerifyStage.Repaired, isRepair);
                 Banner = new Banner(BannerKind.Success, PtBrazil.Count(problems, "arquivo consertado.", "arquivos consertados."), Recycled(report.DamagedFiles.Count + report.AppendedFiles.Count));
                 break;
 
             case EngineOutcome.Completed:
-                Stage = isRepair ? VerifyStage.Repaired : VerifyStage.Verified;
-                Heading = isRepair ? "Reparo concluído" : "Verificação concluída";
+                Enter(isRepair ? VerifyStage.Repaired : VerifyStage.Verified, isRepair);
                 Banner = new Banner(BannerKind.Success, AllComplete(report.SourceFiles.Count), result.RecoveryFilesIncomplete ? "Um dos arquivos de recuperação está danificado ou faltando." : null);
                 break;
 
             case EngineOutcome.RepairPossible:
-                Stage = VerifyStage.Verified;
-                Heading = "Verificação concluída";
+                Enter(VerifyStage.Verified, isRepair);
                 Banner = new Banner(BannerKind.Warning, WithProblem(problems) + " O reparo é possível.", BlocksNeeded(report));
                 CanRepair = true;
                 break;
 
             default:
-                Stage = VerifyStage.Verified;
-                Heading = "Verificação concluída";
+                Enter(VerifyStage.Verified, isRepair);
                 Banner = new Banner(BannerKind.Error, WithProblem(problems) + " O reparo não é possível.", BlocksLacking(report.RecoveryBlocks));
                 break;
         }
 
         ShowFiles(files);
+    }
+
+    /// <summary>Moves to <paramref name="stage"/> with the heading that goes with it. A failure has its own: <see cref="Fail"/>.</summary>
+    private void Enter(VerifyStage stage, bool isRepair)
+    {
+        Stage = stage;
+        Heading = stage switch
+        {
+            VerifyStage.Verifying => "Verificando",
+            VerifyStage.Repairing => "Reparando",
+            VerifyStage.Verified => "Verificação concluída",
+            VerifyStage.Repaired => "Reparo concluído",
+            VerifyStage.Canceled => isRepair ? "Reparo cancelado" : "Verificação cancelada",
+            _ => throw new ArgumentOutOfRangeException(nameof(stage), stage, "No heading goes with this stage."),
+        };
     }
 
     private void Fail(string heading, Banner banner, string details)
@@ -405,16 +352,16 @@ public sealed class VerifyScreen : Observable, IDisposable
 
         IEnumerable<string> ByName(IEnumerable<string> files) => files.Order(StringComparer.CurrentCultureIgnoreCase);
 
-        ProblemFile Problem(string file, ProblemKind kind, string tag, string? image) =>
+        ProblemFile Problem(string file, ProblemKind kind, string? image) =>
             allFixed
-                ? new ProblemFile(NameOf(file), ProblemKind.Repaired, "Reparado", file, Meta(file, file))
-                : new ProblemFile(NameOf(file), kind, tag, image, Meta(file, image));
+                ? new ProblemFile(NameOf(file), ProblemKind.Repaired, file, Meta(file, file))
+                : new ProblemFile(NameOf(file), kind, image, Meta(file, image));
 
         IReadOnlyList<ProblemFile> problems =
         [
-            .. ByName(report.DamagedFiles.Concat(report.AppendedFiles)).Select(file => Problem(file, ProblemKind.Damaged, "Danificado", file)),
-            .. ByName(report.MissingFiles).Select(file => Problem(file, ProblemKind.Missing, "Faltando", null)),
-            .. ByName(report.MisnamedFiles.Keys).Select(file => Problem(file, ProblemKind.Misnamed, "Nome trocado", report.MisnamedFiles[file])),
+            .. ByName(report.DamagedFiles.Concat(report.AppendedFiles)).Select(file => Problem(file, ProblemKind.Damaged, file)),
+            .. ByName(report.MissingFiles).Select(file => Problem(file, ProblemKind.Missing, null)),
+            .. ByName(report.MisnamedFiles.Keys).Select(file => Problem(file, ProblemKind.Misnamed, report.MisnamedFiles[file])),
         ];
 
         IReadOnlyList<CompleteFile> complete =

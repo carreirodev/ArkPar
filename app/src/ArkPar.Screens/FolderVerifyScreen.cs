@@ -29,7 +29,7 @@ public sealed record FolderCounts(int Complete, int Repairable, int Unrepairable
 /// one after another, and sums them up by folder. Each set's detail, and its repair, is the Verify and repair
 /// screen itself (<see cref="Follow"/>). Use it from the screen's thread; the engine's progress is brought back to it.
 /// </summary>
-public sealed class FolderVerifyScreen : Observable, IDisposable
+public sealed class FolderVerifyScreen : EngineTaskScreen, IDisposable
 {
     private readonly Func<EngineCommand, IProgress<EngineProgress>, IEngineRun> _startEngine;
     private readonly Func<string, CancellationToken, FoundSets> _findSets;
@@ -47,10 +47,6 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
     private IReadOnlyList<CheckedSet> _sets = [];
     private string _foundText = "";
     private string? _progressText;
-    private string _activityText = "";
-    private double? _percent;
-    private bool _isPaused;
-    private Banner? _banner;
     private FolderCounts? _counts;
     private string? _details;
     private CheckedSet? _openedSet;
@@ -108,53 +104,6 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
 
     /// <summary>Which set is under way, e.g. "Conjunto 3 de 12: 2019\Natal\Natal.par2"; null when nothing runs.</summary>
     public string? ProgressText { get => _progressText; private set => Set(ref _progressText, value); }
-
-    /// <summary>What the engine is doing right now, e.g. "Lendo praia 01.jpg".</summary>
-    public string ActivityText { get => _activityText; private set => Set(ref _activityText, value); }
-
-    /// <summary>How far the set under way is, from 0 to 100; null before the engine reports any.</summary>
-    public double? Percent
-    {
-        get => _percent;
-        private set
-        {
-            if (Set(ref _percent, value))
-            {
-                Announce(nameof(IsPercentUnknown));
-            }
-        }
-    }
-
-    public bool IsPercentUnknown => Percent is null;
-
-    public bool IsPaused
-    {
-        get => _isPaused;
-        private set
-        {
-            if (Set(ref _isPaused, value))
-            {
-                Announce(nameof(PauseText));
-            }
-        }
-    }
-
-    public string PauseText => IsPaused ? "Continuar" : "Pausar";
-
-    /// <summary>The headline: what was found, or the summary once verified.</summary>
-    public Banner? Banner
-    {
-        get => _banner;
-        private set
-        {
-            if (Set(ref _banner, value))
-            {
-                Announce(nameof(HasBanner));
-            }
-        }
-    }
-
-    public bool HasBanner => Banner is not null;
 
     /// <summary>How many folders are in each group; null until the verification starts.</summary>
     public FolderCounts? Counts { get => _counts; private set => Set(ref _counts, value); }
@@ -377,16 +326,7 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         Stage = FolderVerifyStage.Idle;
     }
 
-    public void TogglePause()
-    {
-        if (_run is null)
-        {
-            return;
-        }
-
-        _run.SetPaused(!_run.IsPaused);
-        IsPaused = _run.IsPaused;
-    }
+    public void TogglePause() => TogglePause(_run);
 
     /// <summary>
     /// Stops the search, going back to where the screen was; or stops the set under way and the ones after it,
@@ -486,7 +426,7 @@ public sealed class FolderVerifyScreen : Observable, IDisposable
         catch (Exception failure)
         {
             // Shown on the set as unreadable, with the reason in Detalhes técnicos: the other sets still run.
-            Details = SetCreation.Join(Details, $"{command.RecoveryFile}:\n{failure}");
+            Details = TextJoin.Of(Details, $"{command.RecoveryFile}:\n{failure}");
             return new EngineResult(EngineOutcome.Error, -1, Report: null, failure.ToString());
         }
         finally

@@ -14,10 +14,6 @@ internal static class Ui
 
     public static Visibility VisibleUnless(bool value) => value ? Visibility.Collapsed : Visibility.Visible;
 
-    public static Visibility VisibleIfNeither(bool first, bool second) => first || second ? Visibility.Collapsed : Visibility.Visible;
-
-    public static Visibility VisibleIfSecondOnly(bool first, bool second) => !first && second ? Visibility.Visible : Visibility.Collapsed;
-
     public static Visibility VisibleIfSet(object? value) => value is null ? Visibility.Collapsed : Visibility.Visible;
 
     public static Visibility VisibleIfText(string? text) => string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;

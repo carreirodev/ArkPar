@@ -25,6 +25,14 @@ public sealed partial class VerifyPage : UserControl
     /// <summary>The folder verification; each set's detail is <see cref="Screen"/>.</summary>
     public FolderVerifyScreen FolderVerification { get; } = new((command, progress) => EngineRun.Start(command, progress, processing: App.Settings.Processing));
 
+    /// <summary>The buttons that choose a file or a folder: whenever nothing runs and no folder verification is on screen.</summary>
+    internal static Visibility ChoosingVisibility(bool isRunning, bool isFolderVerification) =>
+        isRunning || isFolderVerification ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <summary>The way back to a folder verification's summary: on a set's detail, while it is not running.</summary>
+    internal static Visibility BackToSummaryVisibility(bool isRunning, bool isFolderVerification) =>
+        !isRunning && isFolderVerification ? Visibility.Visible : Visibility.Collapsed;
+
     /// <summary>The window the pickers open over.</summary>
     public void Attach(WindowId window) => _window = window;
 
